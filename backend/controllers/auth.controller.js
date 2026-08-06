@@ -52,6 +52,12 @@ class AuthController {
       password,
     });
 
+    // Generate tokens for auto-login after registration
+    const { tokens } = await authService.login(email, password, getRequestMeta(req));
+
+    // Set refresh token in httpOnly cookie
+    setRefreshTokenCookie(res, tokens.refreshToken);
+
     return ApiResponse.success(
       res,
       201,
@@ -64,6 +70,11 @@ class AuthController {
           email: user.email,
           role: user.role,
           createdAt: user.createdAt,
+        },
+        tokens: {
+          accessToken: tokens.accessToken,
+          tokenType: 'Bearer',
+          expiresIn: config.JWT.ACCESS_EXPIRES,
         },
       }
     );

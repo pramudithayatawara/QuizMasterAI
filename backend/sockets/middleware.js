@@ -1,8 +1,8 @@
 'use strict';
 
 const jwt = require('jsonwebtoken');
-const config = require('../../config/env');
-const User = require('../../models/User.model');
+const config = require('../config/env');
+const User = require('../models/User.model');
 
 /**
  * @module socketAuthMiddleware

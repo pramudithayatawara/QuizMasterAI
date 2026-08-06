@@ -1,0 +1,305 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base Styles ─────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  /* Dark theme (default) */
+  html.dark body {
+    @apply bg-dark-950 text-dark-100 font-sans antialiased;
+    @apply selection:bg-primary-500 selection:text-white;
+  }
+
+  /* Light theme */
+  html.light body {
+    @apply bg-light-50 text-light-900 font-sans antialiased;
+    @apply selection:bg-primary-500 selection:text-white;
+  }
+
+  /* Custom scrollbar - Dark theme */
+  html.dark ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  html.dark ::-webkit-scrollbar-track {
+    @apply bg-dark-900;
+  }
+  html.dark ::-webkit-scrollbar-thumb {
+    @apply bg-dark-600 rounded-full;
+  }
+  html.dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-dark-500;
+  }
+
+  /* Custom scrollbar - Light theme */
+  html.light ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  html.light ::-webkit-scrollbar-track {
+    @apply bg-light-200;
+  }
+  html.light ::-webkit-scrollbar-thumb {
+    @apply bg-light-400 rounded-full;
+  }
+  html.light ::-webkit-scrollbar-thumb:hover {
+    @apply bg-light-500;
+  }
+}
+
+/* ─── Component Styles ────────────────────────────────────────────────────── */
+@layer components {
+  /* Glass morphism card - Dark theme */
+  html.dark .glass-card {
+    @apply bg-dark-800/60 backdrop-blur-md border border-dark-700/50 rounded-2xl;
+  }
+
+  /* Glass morphism card - Light theme */
+  html.light .glass-card {
+    @apply bg-white/60 backdrop-blur-md border border-light-300 rounded-2xl;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-400 to-secondary-400 bg-clip-text text-transparent;
+  }
+
+  .gradient-text-battle {
+    @apply bg-gradient-to-r from-battle-400 to-accent-400 bg-clip-text text-transparent;
+  }
+
+  /* Gradient backgrounds */
+  .gradient-bg-primary {
+    @apply bg-gradient-to-br from-primary-600 to-primary-800;
+  }
+
+  .gradient-bg-battle {
+    @apply bg-gradient-to-br from-battle-600 to-accent-600;
+  }
+
+  .gradient-bg-success {
+    @apply bg-gradient-to-br from-secondary-500 to-secondary-700;
+  }
+
+  /* Input base - Dark theme */
+  html.dark .input-base {
+    @apply w-full bg-dark-800 border border-dark-600 rounded-xl px-4 py-3
+           text-dark-100 placeholder-dark-400
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           transition-all duration-200;
+  }
+
+  /* Input base - Light theme */
+  html.light .input-base {
+    @apply w-full bg-white border border-light-300 rounded-xl px-4 py-3
+           text-light-900 placeholder-light-500
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           transition-all duration-200;
+  }
+
+  /* Button variants - Dark theme */
+  html.dark .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-primary-600 hover:bg-primary-500
+           text-white font-semibold
+           px-6 py-3 rounded-xl
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           focus:ring-offset-dark-900;
+  }
+
+  html.dark .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-dark-700 hover:bg-dark-600
+           text-dark-100 font-semibold
+           px-6 py-3 rounded-xl
+           border border-dark-600 hover:border-dark-500
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  html.dark .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           bg-red-600 hover:bg-red-500
+           text-white font-semibold
+           px-6 py-3 rounded-xl
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  html.dark .btn-battle {
+    @apply inline-flex items-center justify-center gap-2
+           bg-gradient-to-r from-battle-600 to-accent-600
+           hover:from-battle-500 hover:to-accent-500
+           text-white font-bold
+           px-8 py-4 rounded-xl
+           shadow-glow-purple
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Button variants - Light theme */
+  html.light .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-primary-600 hover:bg-primary-500
+           text-white font-semibold
+           px-6 py-3 rounded-xl
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           focus:ring-offset-white;
+  }
+
+  html.light .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-light-200 hover:bg-light-300
+           text-light-900 font-semibold
+           px-6 py-3 rounded-xl
+           border border-light-300 hover:border-light-400
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  html.light .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           bg-red-600 hover:bg-red-500
+           text-white font-semibold
+           px-6 py-3 rounded-xl
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  html.light .btn-battle {
+    @apply inline-flex items-center justify-center gap-2
+           bg-gradient-to-r from-battle-600 to-accent-600
+           hover:from-battle-500 hover:to-accent-500
+           text-white font-bold
+           px-8 py-4 rounded-xl
+           shadow-glow-purple
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Badge */
+  .badge-easy   { @apply bg-secondary-500/20 text-secondary-400 border border-secondary-500/30; }
+  .badge-medium { @apply bg-accent-500/20    text-accent-400    border border-accent-500/30;    }
+  .badge-hard   { @apply bg-red-500/20       text-red-400       border border-red-500/30;       }
+
+  /* Difficulty pill */
+  .difficulty-pill {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold;
+  }
+
+  /* Shimmer loading - Dark theme */
+  html.dark .shimmer {
+    @apply animate-shimmer bg-gradient-to-r
+           from-dark-800 via-dark-700 to-dark-800
+           bg-[length:200%_100%];
+  }
+
+  /* Shimmer loading - Light theme */
+  html.light .shimmer {
+    @apply animate-shimmer bg-gradient-to-r
+           from-light-200 via-light-300 to-light-200
+           bg-[length:200%_100%];
+  }
+
+  /* Quiz option - Dark theme */
+  html.dark .quiz-option {
+    @apply w-full flex items-center gap-4 p-4 rounded-xl border-2
+           cursor-pointer transition-all duration-200
+           border-dark-600 bg-dark-800/50
+           hover:border-primary-500 hover:bg-primary-500/10;
+  }
+
+  html.dark .quiz-option.selected {
+    @apply border-primary-500 bg-primary-500/20;
+  }
+
+  html.dark .quiz-option.correct {
+    @apply border-secondary-500 bg-secondary-500/20;
+  }
+
+  html.dark .quiz-option.incorrect {
+    @apply border-red-500 bg-red-500/20;
+  }
+
+  /* Quiz option - Light theme */
+  html.light .quiz-option {
+    @apply w-full flex items-center gap-4 p-4 rounded-xl border-2
+           cursor-pointer transition-all duration-200
+           border-light-300 bg-white/50
+           hover:border-primary-500 hover:bg-primary-500/10;
+  }
+
+  html.light .quiz-option.selected {
+    @apply border-primary-500 bg-primary-500/20;
+  }
+
+  html.light .quiz-option.correct {
+    @apply border-secondary-500 bg-secondary-500/20;
+  }
+
+  html.light .quiz-option.incorrect {
+    @apply border-red-500 bg-red-500/20;
+  }
+
+  /* Stat card styles removed to avoid circular dependency - defined inline in components */
+}
+
+/* ─── Utility Styles ──────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
+
+/* Page transition */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+/* Battle arena pulse */
+@keyframes battle-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(217, 70, 239, 0.3); }
+  50%       { box-shadow: 0 0 40px rgba(217, 70, 239, 0.6); }
+}
+
+.battle-glow {
+  animation: battle-pulse 2s ease-in-out infinite;
+}
+
+/* Timer warning animation */
+@keyframes timer-warning {
+  0%, 100% { color: #f97316; }
+  50%       { color: #ef4444; }
+}
+
+.timer-warning {
+  animation: timer-warning 0.5s ease-in-out infinite;
+}

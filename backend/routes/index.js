@@ -11,6 +11,7 @@ const resultRoutes = require('./result.routes');
 const gamificationRoutes = require('./gamification.routes');
 const battleRoutes = require('./battle.routes');
 const adminRoutes = require('./admin.routes');
+const settingsRoutes = require('./settings.routes');
 
 /**
  * @module routes
@@ -40,5 +41,6 @@ router.use('/results', resultRoutes);
 router.use('/gamification', gamificationRoutes);
 router.use('/battle', battleRoutes);
 router.use('/admin', adminRoutes);
+router.use('/settings', settingsRoutes);
 
 module.exports = router;

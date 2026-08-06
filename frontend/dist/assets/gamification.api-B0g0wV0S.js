@@ -1,0 +1,1 @@
+import{d as a}from"./index-Cd1R5eMs.js";const t={getProfile:()=>a.get("/api/v1/gamification/profile/me"),getBadges:()=>a.get("/api/v1/gamification/badges/me"),getLeaderboard:e=>a.get("/api/v1/gamification/leaderboard",{params:e}),getStats:()=>a.get("/api/v1/results/analytics/me")};export{t as g};

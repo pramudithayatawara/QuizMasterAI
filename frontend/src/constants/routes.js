@@ -1,0 +1,40 @@
+/**
+ * @constants routes
+ * @description Centralized route path constants.
+ */
+export const ROUTES = {
+  // Auth
+  LOGIN:           '/login',
+  REGISTER:        '/register',
+  FORGOT_PASSWORD: '/forgot-password',
+  RESET_PASSWORD:  '/reset-password/:token',
+
+  // App
+  DASHBOARD:       '/dashboard',
+  PROFILE:         '/profile',
+  SETTINGS:        '/settings',
+
+  // PDF
+  PDF_LIST:        '/pdfs',
+  PDF_DETAIL:      '/pdfs/:id',
+
+  // Quiz
+  QUIZ_LIST:       '/quizzes',
+  QUIZ_PLAY:       '/quizzes/:id/play',
+  QUIZ_RESULT:     '/quizzes/:id/result',
+
+  // Battle
+  BATTLE_LOBBY:    '/battle',
+  BATTLE_PLAY:     '/battle/:id/play',
+
+  // Gamification
+  GAMIFICATION:    '/achievements',
+
+  // Admin
+  ADMIN:           '/admin',
+  ADMIN_USERS:     '/admin/users',
+  ADMIN_BATTLES:   '/admin/battles',
+
+  // Not Found
+  NOT_FOUND:       '*',
+};

@@ -33,13 +33,13 @@ const authValidator = {
       .notEmpty().withMessage('Password is required')
       .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
       .isLength({ max: 128 }).withMessage('Password cannot exceed 128 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-      .withMessage('Password must contain uppercase, lowercase, number and special character'),
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('Password must contain uppercase, lowercase, and number'),
 
     body('confirmPassword')
-      .notEmpty().withMessage('Confirm password is required')
+      .optional()
       .custom((value, { req }) => {
-        if (value !== req.body.password) {
+        if (value && value !== req.body.password) {
           throw new Error('Passwords do not match');
         }
         return true;
@@ -77,8 +77,8 @@ const authValidator = {
     body('password')
       .notEmpty().withMessage('Password is required')
       .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-      .withMessage('Password must contain uppercase, lowercase, number and special character'),
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('Password must contain uppercase, lowercase, and number'),
 
     body('confirmPassword')
       .notEmpty().withMessage('Confirm password is required')
@@ -98,8 +98,8 @@ const authValidator = {
     body('newPassword')
       .notEmpty().withMessage('New password is required')
       .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-      .withMessage('Password must contain uppercase, lowercase, number and special character')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('Password must contain uppercase, lowercase, and number')
       .custom((value, { req }) => {
         if (value === req.body.currentPassword) {
           throw new Error('New password must be different from current password');

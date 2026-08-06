@@ -2,7 +2,7 @@
 
 const { Server } = require('socket.io');
 const corsOptions = require('../config/cors');
-const { socketAuthMiddleware } = require('./middleware/socketAuth.middleware');
+const { socketAuthMiddleware } = require('./middleware');
 const { registerBattleSocket } = require('./battle.socket');
 const { registerMatchmakingSocket } = require('./matchmaking.socket');
 const logger = require('../utils/logger');

@@ -57,10 +57,14 @@ class AuthService {
       totalPoints: 0,
     });
 
-    // Send welcome email (non-blocking)
-    emailService.sendWelcomeEmail(user).catch((err) => {
-      logger.warn(`Welcome email failed for ${email}: ${err.message}`);
-    });
+    // Send welcome email (non-blocking - don't fail registration if email fails)
+    if (config.EMAIL.USER && config.EMAIL.PASS) {
+      emailService.sendWelcomeEmail(user).catch((err) => {
+        logger.warn(`Welcome email failed for ${email}: ${err.message}`);
+      });
+    } else {
+      logger.info(`Email not configured - skipping welcome email for ${email}`);
+    }
 
     logger.info(`New user registered: ${email}`);
 

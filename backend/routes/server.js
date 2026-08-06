@@ -2,14 +2,14 @@
 
 const http = require('http');
 const app = require('./app');
-const connectDB = require('./config/db');
-const config = require('./config/env');
-const logger = require('./utils/logger');
-const { initializeSocket } = require('./sockets/index');
+const connectDB = require('../config/db');
+const config = require('../config/env');
+const logger = require('../utils/logger');
+const { initializeSocket } = require('../sockets/index');
 
 // ─── Load cron jobs ──────────────────────────────────────────────────────────
-const { startLeaderboardJob } = require('./jobs/leaderboard.job');
-const { startCleanupTokensJob } = require('./jobs/cleanupTokens.job');
+const { startLeaderboardJob } = require('../jobs/leaderboard.job');
+const { startCleanupTokensJob } = require('../jobs/cleanupTokens.job');
 
 /**
  * @module server

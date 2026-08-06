@@ -12,6 +12,7 @@ const config = require('./env');
 const ALLOWED_ORIGINS = [
   config.FRONTEND_URL,
   'http://localhost:5173',
+  'http://localhost:5174',
   'http://localhost:3000',
 ];
 
@@ -19,6 +20,11 @@ const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, server-to-server)
     if (!origin) return callback(null, true);
+
+    // Allow localhost origins in development
+    if (origin && origin.startsWith('http://localhost')) {
+      return callback(null, true);
+    }
 
     if (ALLOWED_ORIGINS.includes(origin)) {
       callback(null, true);

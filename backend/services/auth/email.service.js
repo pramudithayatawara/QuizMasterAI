@@ -19,6 +19,12 @@ class EmailService {
    * @private _createTransporter
    */
   _createTransporter() {
+    // Check if email is configured
+    if (!config.EMAIL.USER || !config.EMAIL.PASS) {
+      logger.warn('Email service not configured - emails will be disabled');
+      return null;
+    }
+
     return nodemailer.createTransport({
       host: config.EMAIL.HOST,
       port: config.EMAIL.PORT,
@@ -38,6 +44,12 @@ class EmailService {
    * @description Core email sending method.
    */
   async sendEmail({ to, subject, html, text }) {
+    // If transporter is not configured, just log and return
+    if (!this.transporter) {
+      logger.warn(`Email service not configured - skipping email to ${to}`);
+      return null;
+    }
+
     try {
       const mailOptions = {
         from: config.EMAIL.FROM,

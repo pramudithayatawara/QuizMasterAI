@@ -7,14 +7,14 @@ const morgan = require('morgan');
 const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 
-const config = require('./config/env');
-const helmetConfig = require('./config/helmet');
-const corsOptions = require('./config/cors');
-const { globalLimiter } = require('./config/rateLimiter');
-const { errorHandler, notFoundHandler } = require('./middleware/error.middleware');
-const { sanitizeInput } = require('./middleware/sanitize.middleware');
-const routes = require('./routes/index');
-const logger = require('./utils/logger');
+const config = require('../config/env');
+const helmetConfig = require('../config/helmet');
+const corsOptions = require('../config/cors');
+const { globalLimiter } = require('../config/rateLimiter');
+const { errorHandler, notFoundHandler } = require('../middleware/error.middleware');
+const { sanitizeInput } = require('../middleware/sanitize.middleware');
+const routes = require('./index');
+const logger = require('../utils/logger');
 
 /**
  * @module app
