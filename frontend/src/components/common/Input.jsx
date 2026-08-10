@@ -30,7 +30,7 @@ const Input = forwardRef(({
       {/* Input wrapper */}
       <div className="relative">
         {leftIcon && (
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-dark-400">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-dark-400 z-10">
             {leftIcon}
           </div>
         )}
@@ -40,8 +40,8 @@ const Input = forwardRef(({
           type={type}
           className={cn(
             'input-base',
-            leftIcon  && 'pl-10',
-            rightIcon && 'pr-10',
+            leftIcon  && '!pl-10', // ! (Important) මඟින් input-base හි padding override කරයි
+            rightIcon && '!pr-10', // ! (Important) මඟින් right padding override කරයි
             error     && 'border-red-500 focus:ring-red-500',
             className
           )}
@@ -49,7 +49,7 @@ const Input = forwardRef(({
         />
 
         {rightIcon && (
-          <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-dark-400">
+          <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-dark-400 z-10">
             {rightIcon}
           </div>
         )}

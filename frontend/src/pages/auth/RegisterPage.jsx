@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, UserCircle, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { ROUTES } from '../../constants/routes.js';
 import Button from '../../components/common/Button.jsx';
@@ -58,7 +58,7 @@ const RegisterPage = () => {
             label="First Name"
             placeholder="John"
             error={errors.firstName?.message}
-            leftIcon={<User size={16} />}
+            leftIcon={<UserCircle size={16} />}
             required
             {...register('firstName')}
           />
@@ -66,6 +66,7 @@ const RegisterPage = () => {
             label="Last Name"
             placeholder="Doe"
             error={errors.lastName?.message}
+            leftIcon={<UserCircle size={16} />}
             required
             {...register('lastName')}
           />
@@ -76,7 +77,7 @@ const RegisterPage = () => {
           type="email"
           placeholder="you@example.com"
           error={errors.email?.message}
-          leftIcon={<Mail size={16} />}
+          leftIcon={<User size={16} />}
           required
           {...register('email')}
         />
@@ -86,7 +87,7 @@ const RegisterPage = () => {
           type={showPassword ? 'text' : 'password'}
           placeholder="Min 8 chars, uppercase, number"
           error={errors.password?.message}
-          leftIcon={<Lock size={16} />}
+          leftIcon={<ShieldCheck size={16} />}
           rightIcon={
             <button
               type="button"
@@ -105,7 +106,7 @@ const RegisterPage = () => {
           type={showPassword ? 'text' : 'password'}
           placeholder="Repeat your password"
           error={errors.confirmPassword?.message}
-          leftIcon={<Lock size={16} />}
+          leftIcon={<ShieldCheck size={16} />}
           required
           {...register('confirmPassword')}
         />

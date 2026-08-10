@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Brain, Play, Search, Plus, Clock,
-  FileText, TrendingUp, Filter,
+  FileText, TrendingUp, Filter, ArrowLeft
 } from 'lucide-react';
 import { quizAPI } from '../../api/quiz.api.js';
 import { ROUTES } from '../../constants/routes.js';
@@ -15,6 +15,7 @@ import Spinner from '../../components/common/Spinner.jsx';
 import EmptyState from '../../components/common/EmptyState.jsx';
 import { formatRelativeTime } from '../../utils/formatters.js';
 import { cn, getDifficultyClass } from '../../utils/helpers.js';
+import QuizView from '../../components/quiz/QuizView.jsx';
 import toast from 'react-hot-toast';
 
 /**
@@ -26,6 +27,8 @@ const QuizListPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('all');
+  const [selectedQuizId, setSelectedQuizId] = useState(null);
+  const [selectedPdfId, setSelectedPdfId] = useState(null);
 
   useEffect(() => {
     const fetchQuizzes = async () => {
@@ -48,6 +51,16 @@ const QuizListPage = () => {
   const filteredQuizzes = quizzes.filter((quiz) =>
     quiz.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleQuizSelect = (quizId, pdfId) => {
+    setSelectedQuizId(quizId);
+    setSelectedPdfId(pdfId);
+  };
+
+  const handleBackToList = () => {
+    setSelectedQuizId(null);
+    setSelectedPdfId(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -99,13 +112,28 @@ const QuizListPage = () => {
         </Card>
       </motion.div>
 
-      {/* Quiz Grid */}
+      {/* Quiz Grid or Quiz View */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        {isLoading ? (
+        {selectedQuizId ? (
+          <div>
+            <button
+              onClick={handleBackToList}
+              className="mb-4 flex items-center gap-2 text-indigo-400 hover:text-indigo-300"
+            >
+              <ArrowLeft size={20} />
+              Back to Quizzes
+            </button>
+            <QuizView
+              quizId={selectedQuizId}
+              pdfId={selectedPdfId}
+              onClose={handleBackToList}
+            />
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Spinner size="xl" />
           </div>
@@ -180,19 +208,30 @@ const QuizListPage = () => {
                   </div>
 
                   {/* Action */}
-                  <Link
-                    to={ROUTES.QUIZ_PLAY.replace(':id', quiz._id)}
-                    className="mt-auto"
-                  >
+                  <div className="mt-auto flex gap-2">
                     <Button
                       variant="primary"
                       size="sm"
-                      className="w-full"
+                      className="flex-1"
                       leftIcon={<Play size={16} />}
+                      onClick={() => handleQuizSelect(quiz._id, quiz.pdfId)}
                     >
-                      Start Quiz
+                      View Quiz
                     </Button>
-                  </Link>
+                    <Link
+                      to={ROUTES.QUIZ_PLAY.replace(':id', quiz._id)}
+                      className="flex-1"
+                    >
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="w-full"
+                        leftIcon={<TrendingUp size={16} />}
+                      >
+                        Play
+                      </Button>
+                    </Link>
+                  </div>
                 </Card>
               </motion.div>
             ))}

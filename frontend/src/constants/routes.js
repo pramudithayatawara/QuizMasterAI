@@ -15,6 +15,7 @@ export const ROUTES = {
   SETTINGS:        '/settings',
 
   // PDF
+  PDF_MANAGER:     '/pdfs',
   PDF_LIST:        '/pdfs',
   PDF_DETAIL:      '/pdfs/:id',
 

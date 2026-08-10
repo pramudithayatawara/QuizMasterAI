@@ -14,8 +14,8 @@ const AppError = require('../utils/AppError');
 
 class QuizController {
   /**
-   * @route   POST /api/v1/quiz/generate
-   * @desc    Generate quiz from PDF
+   * @route   POST /api/v1/quizzes/generate
+   * @desc    Generate quiz from PDF using RAG pipeline with Gemini
    * @access  Private
    */
   generate = asyncHandler(async (req, res) => {
@@ -25,7 +25,7 @@ class QuizController {
       throw new AppError('PDF ID is required.', 400, 'PDF_ID_REQUIRED');
     }
 
-    const quiz = await quizService.generateQuiz(
+    const quiz = await quizService.generateQuizFromPdf(
       pdfId,
       req.user._id,
       { difficulty, questionCount }
@@ -45,6 +45,8 @@ class QuizController {
           trueFalseCount: quiz.trueFalseCount,
           timeLimit: quiz.timeLimit,
           status: quiz.status,
+          retrievedChunks: quiz.retrievedChunks,
+          generationModel: quiz.generationModel,
           createdAt: quiz.createdAt,
         },
       }
@@ -52,7 +54,7 @@ class QuizController {
   });
 
   /**
-   * @route   POST /api/v1/quiz/:id/start
+   * @route   POST /api/v1/quizzes/:id/start
    * @desc    Start quiz attempt
    * @access  Private
    */
@@ -71,7 +73,7 @@ class QuizController {
   });
 
   /**
-   * @route   POST /api/v1/quiz/attempt/:attemptId/submit
+   * @route   POST /api/v1/quizzes/attempt/:attemptId/submit
    * @desc    Submit quiz answers
    * @access  Private
    */
@@ -107,7 +109,7 @@ class QuizController {
   });
 
   /**
-   * @route   GET /api/v1/quiz/attempt/:attemptId/review
+   * @route   GET /api/v1/quizzes/attempt/:attemptId/review
    * @desc    Get quiz review with answers
    * @access  Private
    */
@@ -126,7 +128,7 @@ class QuizController {
   });
 
   /**
-   * @route   GET /api/v1/quiz
+   * @route   GET /api/v1/quizzes
    * @desc    Get all user quizzes
    * @access  Private
    */
@@ -146,7 +148,50 @@ class QuizController {
   });
 
   /**
-   * @route   GET /api/v1/quiz/history
+   * @route   GET /api/v1/quizzes/pdf/:pdfId
+   * @desc    Get all quizzes generated from a specific PDF
+   * @access  Private
+   */
+  getQuizzesByPdf = asyncHandler(async (req, res) => {
+    const { pdfId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const { quizzes, pagination } = await quizService.getQuizzesByPdf(
+      pdfId,
+      req.user._id,
+      { page, limit }
+    );
+
+    return ApiResponse.paginated(
+      res,
+      200,
+      'Quizzes retrieved successfully.',
+      quizzes,
+      pagination
+    );
+  });
+
+  /**
+   * @route   GET /api/v1/quizzes/:id
+   * @desc    Get specific quiz with questions and context references
+   * @access  Private
+   */
+  getQuizById = asyncHandler(async (req, res) => {
+    const quiz = await quizService.getQuizById(
+      req.params.id,
+      req.user._id
+    );
+
+    return ApiResponse.success(
+      res,
+      200,
+      'Quiz retrieved successfully.',
+      { quiz }
+    );
+  });
+
+  /**
+   * @route   GET /api/v1/quizzes/history
    * @desc    Get quiz attempt history
    * @access  Private
    */

@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 
 const quizController = require('../controllers/quiz.controller');
 const { validate } = require('../middleware/validate.middleware');
@@ -10,7 +10,7 @@ const { protect } = require('../middleware/auth.middleware');
 
 /**
  * @router QuizRoutes
- * @baseURL /api/v1/quiz
+ * @baseURL /api/v1/quizzes
  */
 
 router.use(protect);
@@ -22,20 +22,56 @@ router.post(
     body('pdfId')
       .notEmpty().withMessage('PDF ID is required')
       .isMongoId().withMessage('Invalid PDF ID'),
-    body('difficulty')
-      .optional()
-      .isIn(['easy', 'medium', 'hard'])
-      .withMessage('Invalid difficulty'),
     body('questionCount')
       .optional()
       .isInt({ min: 10, max: 20 })
-      .withMessage('Question count must be 10-20'),
+      .withMessage('Question count must be between 10 and 20'),
+    body('difficulty')
+      .optional()
+      .isIn(['easy', 'medium', 'hard'])
+      .withMessage('Invalid difficulty level'),
   ],
   validate,
   quizController.generate
 );
 
-// Get all quizzes
+// Get all quizzes for a specific PDF
+router.get(
+  '/pdf/:pdfId',
+  [
+    param('pdfId')
+      .isMongoId().withMessage('Invalid PDF ID'),
+    query('page')
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage('Page must be a positive integer'),
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 50 })
+      .withMessage('Limit must be between 1 and 50'),
+  ],
+  validate,
+  quizController.getQuizzesByPdf
+);
+
+// Get specific quiz with questions and context references
+router.get(
+  '/:id',
+  [
+    param('id')
+      .isMongoId().withMessage('Invalid quiz ID'),
+  ],
+  validate,
+  quizController.getQuizById
+);
+
+// Get all user quizzes (existing route)
+router.get('/', quizController.getAll);
+
+// Get quiz history (existing route)
+router.get('/history', quizController.getHistory);
+
+// Get all user quizzes
 router.get('/', quizController.getAll);
 
 // Get quiz history

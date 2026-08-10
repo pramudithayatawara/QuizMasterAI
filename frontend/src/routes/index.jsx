@@ -19,7 +19,7 @@ const DashboardPage       = lazy(() => import('../pages/dashboard/DashboardPage.
 const ProfilePage         = lazy(() => import('../pages/profile/ProfilePage.jsx'));
 const SettingsPage        = lazy(() => import('../pages/settings/SettingsPage.jsx'));
 
-const PDFListPage          = lazy(() => import('../pages/pdf/PDFListPage.jsx'));
+const PDFManagerPage      = lazy(() => import('../pages/pdf/PdfManagerPage.jsx'));
 const PDFDetailPage        = lazy(() => import('../pages/pdf/PDFDetailPage.jsx'));
 
 const QuizListPage         = lazy(() => import('../pages/quiz/QuizListPage.jsx'));
@@ -70,7 +70,8 @@ const AppRoutes = () => (
           <Route path={ROUTES.DASHBOARD}    element={<DashboardPage />} />
           <Route path={ROUTES.PROFILE}      element={<ProfilePage />} />
           <Route path={ROUTES.SETTINGS}     element={<SettingsPage />} />
-          <Route path={ROUTES.PDF_LIST}     element={<PDFListPage />} />
+          <Route path={ROUTES.PDF_MANAGER}  element={<PDFManagerPage />} />
+          <Route path={ROUTES.PDF_LIST}     element={<PDFManagerPage />} />
           <Route path={ROUTES.PDF_DETAIL}   element={<PDFDetailPage />} />
           <Route path={ROUTES.QUIZ_LIST}    element={<QuizListPage />} />
           <Route path={ROUTES.QUIZ_PLAY}    element={<QuizPlayPage />} />

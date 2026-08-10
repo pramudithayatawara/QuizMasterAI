@@ -178,7 +178,16 @@ const quizSchema = new mongoose.Schema(
 
     generationModel: {
       type: String,
-      default: null, // Track which AI model generated this
+      default: null, // Track which AI model generated this (e.g., 'gemini-pro')
+    },
+
+    contextReferences: {
+      type: [{
+        chunkIndex: Number,
+        text: String,
+        relevanceScore: Number
+      }],
+      default: [], // Detailed context references for traceability
     },
 
     // ─── Battle Mode ─────────────────────────────────────────────

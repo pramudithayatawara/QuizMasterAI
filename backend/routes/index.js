@@ -35,8 +35,9 @@ router.get('/health', (req, res) => {
 // ─── Route mounting ───────────────────────────────────────────────────────────
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
-router.use('/pdf', pdfRoutes);
-router.use('/quiz', quizRoutes);
+router.use('/pdfs', pdfRoutes);
+router.use('/quiz', quizRoutes); // Keep for backward compatibility
+router.use('/quizzes', quizRoutes); // New preferred route
 router.use('/results', resultRoutes);
 router.use('/gamification', gamificationRoutes);
 router.use('/battle', battleRoutes);

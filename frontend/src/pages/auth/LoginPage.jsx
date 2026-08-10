@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Mail, Lock, Brain } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Brain, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { ROUTES } from '../../constants/routes.js';
 import Button from '../../components/common/Button.jsx';
@@ -56,7 +56,7 @@ const LoginPage = () => {
           type="email"
           placeholder="you@example.com"
           error={errors.email?.message}
-          leftIcon={<Mail size={16} />}
+          leftIcon={<User size={16} />}
           required
           {...register('email')}
         />
@@ -66,7 +66,7 @@ const LoginPage = () => {
           type={showPassword ? 'text' : 'password'}
           placeholder="Enter your password"
           error={errors.password?.message}
-          leftIcon={<Lock size={16} />}
+          leftIcon={<ShieldCheck size={16} />}
           rightIcon={
             <button
               type="button"
