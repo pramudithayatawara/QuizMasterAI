@@ -9,7 +9,7 @@ import EmptyState from '../../components/common/EmptyState.jsx';
 import { formatRelativeTime, formatDuration } from '../../utils/formatters.js';
 import { cn } from '../../utils/helpers.js';
 import toast from 'react-hot-toast';
-//mn ponnyek
+
 /**
  * @page AdminBattlesPage
  * @description Battle history and management.
