@@ -147,10 +147,69 @@ const quizAttemptSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Module 05: Adaptive Engine Fields
+    previousDifficulty: {
+      type: String,
+      enum: Object.values(DIFFICULTY),
+      default: null,
+    },
+
+    adaptiveAdjustment: {
+      type: String,
+      enum: ['increased', 'decreased', 'maintained'],
+      default: 'maintained',
+    },
+
     // ─── Analysis ───────────────────────────────────────────────
     weakTopics: {
       type: [String],
       default: [],
+    },
+
+    // Module 06: AI Feedback & Remediation
+    aiFeedback: {
+      summary: {
+        type: String,
+        default: null,
+      },
+      suggestedImprovements: {
+        type: [String],
+        default: [],
+      },
+      recommendedTopicsToReview: {
+        type: [String],
+        default: [],
+      },
+      confidenceLevel: {
+        type: String,
+        enum: ['high', 'medium', 'low'],
+        default: 'medium',
+      },
+      feedbackGeneratedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
+    // Module 06: Performance Analytics
+    performanceMetrics: {
+      averageTimePerQuestion: {
+        type: Number,
+        default: 0,
+      },
+      fastestQuestionTime: {
+        type: Number,
+        default: 0,
+      },
+      slowestQuestionTime: {
+        type: Number,
+        default: 0,
+      },
+      topicAccuracy: {
+        type: Map,
+        of: Number, // topic name -> accuracy percentage
+        default: {},
+      },
     },
 
     // Battle mode reference
@@ -201,7 +260,7 @@ quizAttemptSchema.statics.getLastNAttempts = function (userId, n = 10) {
   })
     .sort({ completedAt: -1 })
     .limit(n)
-    .select('percentage difficulty completedAt score');
+    .select('percentage difficulty completedAt score adaptiveAdjustment previousDifficulty');
 };
 
 const QuizAttempt = mongoose.model('QuizAttempt', quizAttemptSchema);

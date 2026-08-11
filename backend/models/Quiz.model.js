@@ -56,6 +56,21 @@ const questionSchema = new mongoose.Schema(
       required: true,
     },
 
+    // AI Difficulty Classification - Module 04
+    bloomsTaxonomy: {
+      type: String,
+      enum: ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'],
+      required: true,
+      default: 'Understand',
+    },
+
+    classificationReason: {
+      type: String,
+      default: null,
+      description: 'AI-generated explanation for difficulty classification',
+    },
+
+    // Legacy field for backward compatibility
     bloomsLevel: {
       type: String,
       enum: ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'],
@@ -146,6 +161,22 @@ const quizSchema = new mongoose.Schema(
     trueFalseCount: {
       type: Number,
       default: 0,
+    },
+
+    // ─── Difficulty Breakdown - Module 04 ─────────────────────────────
+    difficultyBreakdown: {
+      easy: {
+        type: Number,
+        default: 0,
+      },
+      medium: {
+        type: Number,
+        default: 0,
+      },
+      hard: {
+        type: Number,
+        default: 0,
+      },
     },
 
     // ─── Difficulty ─────────────────────────────────────────────

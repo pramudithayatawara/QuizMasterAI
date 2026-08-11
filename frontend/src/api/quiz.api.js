@@ -37,6 +37,13 @@ export const quizAPI = {
   review: (attemptId) =>
     axiosInstance.get(`/api/v1/quizzes/attempt/${attemptId}/review`),
 
+  // Module 05: Adaptive Quiz Engine endpoints
+  getRecommendedDifficulty: () =>
+    axiosInstance.get('/api/v1/quizzes/adaptive/recommended-difficulty'),
+
+  getPerformanceStats: () =>
+    axiosInstance.get('/api/v1/quizzes/adaptive/performance-stats'),
+
   // Legacy endpoints (for backward compatibility)
   generate: (data) =>
     axiosInstance.post('/api/v1/quiz/generate', data),

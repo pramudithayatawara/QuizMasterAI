@@ -92,14 +92,17 @@ export const useQuizStore = create((set, get) => ({
     set({ timeRemaining: time });
   },
 
-  submitQuiz: async (isTimeout = false) => {
+  submitQuiz: async (isTimeout = false, exactTimeTaken = null) => {
     const { currentAttempt, answers, timeRemaining, currentQuiz } = get();
 
     if (!currentAttempt) return { success: false };
 
     set({ isSubmitting: true });
     try {
-      const timeTaken = (currentQuiz.timeLimit * 60) - timeRemaining;
+      // Module 05: Use exact time taken if provided, otherwise calculate from timer
+      const timeTaken = exactTimeTaken !== null 
+        ? exactTimeTaken 
+        : (currentQuiz.timeLimit * 60) - timeRemaining;
 
       const response = await quizAPI.submit(currentAttempt._id, {
         answers: Object.entries(answers).map(([questionId, answer]) => ({
@@ -109,10 +112,12 @@ export const useQuizStore = create((set, get) => ({
         timeTaken,
       });
 
-      const { result } = response.data.data;
+      const { result, adaptive, aiFeedback, topicAccuracy, performanceMetrics } = response.data.data;
       set({ result, isSubmitting: false });
 
-      return { success: true, result };
+      // Module 05: Return adaptive information
+      // Module 06: Return AI feedback and performance metrics
+      return { success: true, result, adaptive, aiFeedback, topicAccuracy, performanceMetrics };
 
     } catch (error) {
       set({ isSubmitting: false });

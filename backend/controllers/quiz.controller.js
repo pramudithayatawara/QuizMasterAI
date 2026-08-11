@@ -3,6 +3,7 @@
 const quizService = require('../services/quiz/quiz.service');
 const resultService = require('../services/feedback/feedback.service');
 const gamificationService = require('../services/gamification/gamification.service');
+const adaptiveService = require('../services/adaptive/adaptive.service');
 const ApiResponse = require('../utils/ApiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
@@ -15,11 +16,11 @@ const AppError = require('../utils/AppError');
 class QuizController {
   /**
    * @route   POST /api/v1/quizzes/generate
-   * @desc    Generate quiz from PDF using RAG pipeline with Gemini
+   * @desc    Generate quiz from PDF using RAG pipeline with Module 04 AI Difficulty Classification
    * @access  Private
    */
   generate = asyncHandler(async (req, res) => {
-    const { pdfId, difficulty, questionCount } = req.body;
+    const { pdfId, title, difficulty, questionCount, timeLimit, adaptiveMode } = req.body;
 
     if (!pdfId) {
       throw new AppError('PDF ID is required.', 400, 'PDF_ID_REQUIRED');
@@ -28,7 +29,13 @@ class QuizController {
     const quiz = await quizService.generateQuizFromPdf(
       pdfId,
       req.user._id,
-      { difficulty, questionCount }
+      { 
+        title, 
+        difficulty: difficulty || 'medium', 
+        questionCount: questionCount || 10,
+        timeLimit: timeLimit,
+        adaptiveMode: adaptiveMode || false
+      }
     );
 
     return ApiResponse.success(
@@ -45,6 +52,7 @@ class QuizController {
           trueFalseCount: quiz.trueFalseCount,
           timeLimit: quiz.timeLimit,
           status: quiz.status,
+          difficultyBreakdown: quiz.difficultyBreakdown,
           retrievedChunks: quiz.retrievedChunks,
           generationModel: quiz.generationModel,
           createdAt: quiz.createdAt,
@@ -74,7 +82,7 @@ class QuizController {
 
   /**
    * @route   POST /api/v1/quizzes/attempt/:attemptId/submit
-   * @desc    Submit quiz answers
+   * @desc    Submit quiz answers with adaptive difficulty adjustment and AI feedback - Module 05 & 06
    * @access  Private
    */
   submit = asyncHandler(async (req, res) => {
@@ -93,6 +101,15 @@ class QuizController {
       timeTaken || 0
     );
 
+    // Module 05: Adaptive difficulty adjustment
+    const adaptiveUpdate = await adaptiveService.updateDifficultyAfterSubmission(
+      req.user._id,
+      {
+        scorePercentage: evaluation.percentage,
+        difficulty: evaluation.difficulty
+      }
+    );
+
     // Award gamification XP (async)
     gamificationService
       .processQuizCompletion(req.user._id, evaluation)
@@ -104,7 +121,14 @@ class QuizController {
       res,
       200,
       'Quiz submitted successfully!',
-      { evaluation }
+      { 
+        evaluation,
+        adaptive: adaptiveUpdate,
+        // Module 06: Include AI feedback and performance metrics
+        aiFeedback: evaluation.aiFeedback,
+        topicAccuracy: evaluation.topicAccuracy,
+        performanceMetrics: evaluation.performanceMetrics,
+      }
     );
   });
 
@@ -207,6 +231,38 @@ class QuizController {
       'Quiz history retrieved.',
       attempts,
       pagination
+    );
+  });
+
+  /**
+   * @route   GET /api/v1/adaptive/recommended-difficulty
+   * @desc    Get recommended difficulty based on recent performance - Module 05
+   * @access  Private
+   */
+  getRecommendedDifficulty = asyncHandler(async (req, res) => {
+    const recommendation = await adaptiveService.analyzePerformance(req.user._id);
+
+    return ApiResponse.success(
+      res,
+      200,
+      'Difficulty recommendation calculated.',
+      recommendation
+    );
+  });
+
+  /**
+   * @route   GET /api/v1/adaptive/performance-stats
+   * @desc    Get comprehensive user performance statistics - Module 05
+   * @access  Private
+   */
+  getPerformanceStats = asyncHandler(async (req, res) => {
+    const stats = await adaptiveService.getUserPerformanceStats(req.user._id);
+
+    return ApiResponse.success(
+      res,
+      200,
+      'Performance statistics retrieved.',
+      stats
     );
   });
 }

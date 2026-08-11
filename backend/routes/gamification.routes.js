@@ -16,6 +16,7 @@ router.get(
 // Protected routes
 router.use(protect);
 router.get('/profile', gamificationController.getProfile);
+router.get('/profile/me', gamificationController.getProfile); // Added for frontend compatibility
 router.get('/badges', gamificationController.getBadges);
 router.get('/my-rank', gamificationController.getMyRank);
 

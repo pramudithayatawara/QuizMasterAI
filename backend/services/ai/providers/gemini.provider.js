@@ -21,7 +21,7 @@ class GeminiProvider extends BaseAIProvider {
     }
 
     this.genAI = new GoogleGenerativeAI(config.GEMINI.API_KEY);
-    this.modelName = config.GEMINI.MODEL || 'gemini-1.5-flash';
+    this.modelName = config.GEMINI.MODEL || 'gemini-1.5-flash-latest';
 
     this.generationConfig = {
       temperature: 0.7,

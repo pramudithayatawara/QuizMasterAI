@@ -2,246 +2,303 @@
 
 const QuizAttempt = require('../../models/QuizAttempt.model');
 const User = require('../../models/User.model');
-const {
-  DIFFICULTY,
-  DIFFICULTY_ORDER,
-  SCORE_THRESHOLDS,
-} = require('../../constants/difficulty');
+const { DIFFICULTY } = require('../../constants/difficulty');
 const { ATTEMPT_STATUS } = require('../../constants/quiz');
-const { getLevelFromXP } = require('../../constants/gamification');
-const AppError = require('../../utils/AppError');
 const logger = require('../../utils/logger');
 
 /**
  * @service AdaptiveService
- * @description Intelligent adaptive difficulty engine.
- *
- * Rules:
- * - Track last 10 quiz attempts
- * - 3 consecutive high scores (>=80%) → increase difficulty
- * - 3 consecutive low scores (<=50%)  → decrease difficulty
- * - Otherwise → maintain current difficulty
- *
- * Timer Rules:
- * - Easy   → 15 minutes
- * - Medium → 20 minutes
- * - Hard   → 25 minutes
+ * @description Module 05: Adaptive Quiz Engine
+ * Tracks user performance, analyzes attempt history, and dynamically adjusts recommended difficulty.
+ * Implements performance-based difficulty progression/regression rules.
  */
-
 class AdaptiveService {
-  constructor() {
-    this.TRACK_LAST_N = 10;          // Track last 10 attempts
-    this.CONSECUTIVE_THRESHOLD = 3;  // 3 consecutive for change
-    this.HIGH_SCORE = SCORE_THRESHOLDS.HIGH; // >= 80%
-    this.LOW_SCORE = SCORE_THRESHOLDS.LOW;   // <= 50%
+  /**
+   * @constant DIFFICULTY_LEVELS
+   * @description Ordered difficulty levels for progression
+   */
+  static DIFFICULTY_LEVELS = [DIFFICULTY.EASY, DIFFICULTY.MEDIUM, DIFFICULTY.HARD];
+
+  /**
+   * @constant TIME_LIMITS
+   * @description Time limits in minutes per difficulty level
+   */
+  static TIME_LIMITS = {
+    [DIFFICULTY.EASY]: 15,    // 15 minutes (900 seconds)
+    [DIFFICULTY.MEDIUM]: 20,  // 20 minutes (1200 seconds)
+    [DIFFICULTY.HARD]: 25     // 25 minutes (1500 seconds)
+  };
+
+  /**
+   * @constant ADAPTIVE_RULES
+   * @description Adaptive difficulty rules
+   */
+  static ADAPTIVE_RULES = {
+    HIGH_SCORE_THRESHOLD: 80,    // >= 80% = high performance
+    LOW_SCORE_THRESHOLD: 50,     // < 50% = low performance
+    CONSECUTIVE_ATTEMPTS: 3,     // Number of consecutive attempts to trigger change
+    HISTORY_SIZE: 10             // Number of recent attempts to analyze
+  };
+
+  /**
+   * @method getTimeLimit
+   * @description Get time limit in minutes based on difficulty
+   * @param {string} difficulty - Difficulty level
+   * @returns {number} Time limit in minutes
+   */
+  static getTimeLimit(difficulty) {
+    return this.TIME_LIMITS[difficulty] || this.TIME_LIMITS[DIFFICULTY.MEDIUM];
   }
 
   /**
-   * @method getRecommendedDifficulty
-   * @description Get recommended difficulty for next quiz.
-   * Analyzes last N attempts and applies adaptive rules.
-   * @param {string} userId - User ID
-   * @returns {string} Recommended difficulty level
+   * @method getTimeLimitSeconds
+   * @description Get time limit in seconds based on difficulty
+   * @param {string} difficulty - Difficulty level
+   * @returns {number} Time limit in seconds
    */
-  async getRecommendedDifficulty(userId) {
+  static getTimeLimitSeconds(difficulty) {
+    return this.getTimeLimit(difficulty) * 60;
+  }
+
+  /**
+   * @method analyzePerformance
+   * @description Analyze user's recent quiz attempts and calculate performance metrics
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} Performance analysis with stats and recommendations
+   */
+  static async analyzePerformance(userId) {
     try {
-      // Get user's current difficulty
-      const user = await User.findById(userId).select('currentDifficulty');
-
-      if (!user) {
-        return DIFFICULTY.EASY;
-      }
-
-      const currentDifficulty = user.currentDifficulty || DIFFICULTY.EASY;
+      logger.info(`[Adaptive Engine] Analyzing performance for user: ${userId}`);
 
       // Get last N completed attempts
       const recentAttempts = await QuizAttempt.getLastNAttempts(
         userId,
-        this.TRACK_LAST_N
+        this.ADAPTIVE_RULES.HISTORY_SIZE
       );
 
-      // Not enough attempts to adapt - use current
-      if (recentAttempts.length < this.CONSECUTIVE_THRESHOLD) {
-        return currentDifficulty;
+      if (!recentAttempts || recentAttempts.length === 0) {
+        logger.info(`[Adaptive Engine] No attempts found for user: ${userId}`);
+        return this._getDefaultRecommendation(userId);
       }
 
-      // Analyze consecutive performance
-      const recommendation = this._analyzePerformance(
-        recentAttempts,
-        currentDifficulty
-      );
+      // Calculate performance metrics
+      const metrics = this._calculateMetrics(recentAttempts);
 
-      // Update user's difficulty if changed
-      if (recommendation !== currentDifficulty) {
-        await User.findByIdAndUpdate(userId, {
-          currentDifficulty: recommendation,
-        });
+      // Determine recommended difficulty
+      const recommendation = this._calculateRecommendation(metrics, recentAttempts);
 
-        logger.info(
-          `Adaptive: User ${userId} difficulty changed: ` +
-          `${currentDifficulty} → ${recommendation}`
-        );
-      }
+      logger.info(`[Adaptive Engine] Recommendation for user ${userId}: ${recommendation.difficulty}`);
 
-      return recommendation;
+      return {
+        success: true,
+        userId,
+        currentDifficulty: metrics.currentDifficulty,
+        recommendedDifficulty: recommendation.difficulty,
+        shouldAdjust: recommendation.shouldAdjust,
+        adjustmentReason: recommendation.reason,
+        metrics: {
+          totalAttempts: recentAttempts.length,
+          averageScore: metrics.averageScore,
+          highScoreCount: metrics.highScoreCount,
+          lowScoreCount: metrics.lowScoreCount,
+          consecutiveHighScores: metrics.consecutiveHighScores,
+          consecutiveLowScores: metrics.consecutiveLowScores,
+          recentPerformance: recentAttempts.map(attempt => ({
+            score: attempt.percentage,
+            difficulty: attempt.difficulty,
+            completedAt: attempt.completedAt
+          }))
+        }
+      };
     } catch (error) {
-      logger.error(`Adaptive difficulty error: ${error.message}`);
-      return DIFFICULTY.EASY;
+      logger.error(`[Adaptive Engine] Performance analysis error: ${error.message}`);
+      throw error;
     }
   }
 
   /**
-   * @method updateAfterQuiz
-   * @description Update adaptive profile after quiz completion.
-   * Called immediately after quiz submission.
+   * @method updateDifficultyAfterSubmission
+   * @description Update user's current difficulty based on quiz submission performance
    * @param {string} userId - User ID
-   * @param {number} scorePercentage - Score percentage (0-100)
-   * @param {string} difficulty - Difficulty of completed quiz
-   * @returns {object} Updated difficulty info
+   * @param {Object} quizData - Quiz submission data
+   * @returns {Promise<Object>} Updated difficulty and adaptive status
    */
-  async updateAfterQuiz(userId, scorePercentage, difficulty) {
+  static async updateDifficultyAfterSubmission(userId, quizData) {
     try {
-      const user = await User.findById(userId).select('currentDifficulty');
-      if (!user) return null;
+      const { scorePercentage, difficulty } = quizData;
+
+      logger.info(`[Adaptive Engine] Updating difficulty after submission for user: ${userId}`);
+
+      // Get user's current difficulty
+      const user = await User.findById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
 
       const currentDifficulty = user.currentDifficulty || DIFFICULTY.EASY;
 
-      // Get fresh attempts after this one was saved
-      const recentAttempts = await QuizAttempt.getLastNAttempts(
-        userId,
-        this.TRACK_LAST_N
-      );
+      // Get recent attempts including this one
+      const recentAttempts = await QuizAttempt.getLastNAttempts(userId, this.ADAPTIVE_RULES.CONSECUTIVE_ATTEMPTS);
 
-      const newDifficulty = this._analyzePerformance(
-        recentAttempts,
-        currentDifficulty
-      );
+      // Calculate consecutive performance
+      const consecutiveAnalysis = this._analyzeConsecutivePerformance(recentAttempts);
 
-      const changed = newDifficulty !== currentDifficulty;
+      let newDifficulty = currentDifficulty;
+      let shouldAdjust = false;
+      let adjustmentReason = null;
 
-      if (changed) {
+      // Check for difficulty progression (3 consecutive high scores)
+      if (consecutiveAnalysis.consecutiveHighScores >= this.ADAPTIVE_RULES.CONSECUTIVE_ATTEMPTS) {
+        newDifficulty = this._getNextDifficulty(currentDifficulty, 'increase');
+        shouldAdjust = true;
+        adjustmentReason = `Excellent performance! ${consecutiveAnalysis.consecutiveHighScores} consecutive high scores (${this.ADAPTIVE_RULES.HIGH_SCORE_THRESHOLD}%+). Increasing difficulty.`;
+      }
+      // Check for difficulty regression (3 consecutive low scores)
+      else if (consecutiveAnalysis.consecutiveLowScores >= this.ADAPTIVE_RULES.CONSECUTIVE_ATTEMPTS) {
+        newDifficulty = this._getNextDifficulty(currentDifficulty, 'decrease');
+        shouldAdjust = true;
+        adjustmentReason = `Struggling with current level. ${consecutiveAnalysis.consecutiveLowScores} consecutive low scores (<${this.ADAPTIVE_RULES.LOW_SCORE_THRESHOLD}%). Decreasing difficulty.`;
+      }
+      // Otherwise maintain current difficulty
+      else {
+        adjustmentReason = 'Performance is within acceptable range. Maintaining current difficulty.';
+      }
+
+      // Update user's difficulty if adjustment is needed
+      if (shouldAdjust && newDifficulty !== currentDifficulty) {
         await User.findByIdAndUpdate(userId, {
-          currentDifficulty: newDifficulty,
+          currentDifficulty: newDifficulty
+        });
+        logger.info(`[Adaptive Engine] Updated user ${userId} difficulty: ${currentDifficulty} -> ${newDifficulty}`);
+      }
+
+      // Update the most recent QuizAttempt with adaptive adjustment
+      const recentAttempt = await QuizAttempt.findOne({
+        userId,
+        status: ATTEMPT_STATUS.COMPLETED
+      }).sort({ completedAt: -1 });
+
+      if (recentAttempt) {
+        const adjustmentType = shouldAdjust && newDifficulty !== currentDifficulty 
+          ? (this.DIFFICULTY_LEVELS.indexOf(newDifficulty) > this.DIFFICULTY_LEVELS.indexOf(currentDifficulty) ? 'increased' : 'decreased')
+          : 'maintained';
+
+        await QuizAttempt.findByIdAndUpdate(recentAttempt._id, {
+          adaptiveAdjustment: adjustmentType,
+          previousDifficulty: currentDifficulty
         });
       }
 
       return {
+        success: true,
+        userId,
         previousDifficulty: currentDifficulty,
-        currentDifficulty: newDifficulty,
-        changed,
-        message: this._buildAdaptiveMessage(
-          changed,
-          currentDifficulty,
-          newDifficulty,
-          scorePercentage
-        ),
+        newDifficulty,
+        shouldAdjust,
+        adjustmentReason,
+        scorePercentage,
+        consecutiveAnalysis
       };
     } catch (error) {
-      logger.error(`Update adaptive error: ${error.message}`);
-      return null;
+      logger.error(`[Adaptive Engine] Difficulty update error: ${error.message}`);
+      throw error;
     }
   }
 
   /**
-   * @method getPerformanceSummary
-   * @description Get detailed performance analytics for a user.
-   * @param {string} userId
-   * @returns {object} Performance summary
+   * @method _getDefaultRecommendation
+   * @description Get default recommendation for users with no attempts
+   * @param {string} userId - User ID
+   * @returns {Object} Default recommendation
    */
-  async getPerformanceSummary(userId) {
-    const attempts = await QuizAttempt.getLastNAttempts(
-      userId,
-      this.TRACK_LAST_N
-    );
-
-    if (attempts.length === 0) {
-      return {
-        totalAttempts: 0,
-        averageScore: 0,
-        trend: 'new',
-        currentDifficulty: DIFFICULTY.EASY,
-        consecutiveHighScores: 0,
-        consecutiveLowScores: 0,
-      };
-    }
-
-    const scores = attempts.map((a) => a.percentage);
-    const avgScore = scores.reduce((sum, s) => sum + s, 0) / scores.length;
-
-    const trend = this._calculateTrend(scores);
-    const {
-      consecutiveHighScores,
-      consecutiveLowScores,
-    } = this._countConsecutive(attempts);
-
-    const user = await User.findById(userId).select('currentDifficulty');
+  static async _getDefaultRecommendation(userId) {
+    const user = await User.findById(userId);
+    const currentDifficulty = user?.currentDifficulty || DIFFICULTY.EASY;
 
     return {
-      totalAttempts: attempts.length,
-      averageScore: parseFloat(avgScore.toFixed(2)),
-      trend,
-      currentDifficulty: user?.currentDifficulty || DIFFICULTY.EASY,
-      consecutiveHighScores,
-      consecutiveLowScores,
-      recentScores: scores.slice(0, 5),
+      success: true,
+      userId,
+      currentDifficulty,
+      recommendedDifficulty: currentDifficulty,
+      shouldAdjust: false,
+      adjustmentReason: 'No previous attempts found. Starting at current difficulty level.',
+      metrics: {
+        totalAttempts: 0,
+        averageScore: 0,
+        highScoreCount: 0,
+        lowScoreCount: 0,
+        consecutiveHighScores: 0,
+        consecutiveLowScores: 0,
+        recentPerformance: []
+      }
     };
   }
 
-  // ─── Private Methods ───────────────────────────────────────────────────────
-
   /**
-   * @private _analyzePerformance
-   * @description Core adaptive algorithm.
+   * @method _calculateMetrics
+   * @description Calculate performance metrics from attempts
+   * @param {Array} attempts - Quiz attempts
+   * @returns {Object} Performance metrics
    */
-  _analyzePerformance(attempts, currentDifficulty) {
-    if (attempts.length < this.CONSECUTIVE_THRESHOLD) {
-      return currentDifficulty;
+  static _calculateMetrics(attempts) {
+    if (!attempts || attempts.length === 0) {
+      return {
+        averageScore: 0,
+        highScoreCount: 0,
+        lowScoreCount: 0,
+        consecutiveHighScores: 0,
+        consecutiveLowScores: 0,
+        currentDifficulty: DIFFICULTY.EASY
+      };
     }
 
-    const { consecutiveHighScores, consecutiveLowScores } =
-      this._countConsecutive(attempts);
+    const scores = attempts.map(a => a.percentage);
+    const averageScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    const highScoreCount = scores.filter(s => s >= this.ADAPTIVE_RULES.HIGH_SCORE_THRESHOLD).length;
+    const lowScoreCount = scores.filter(s => s < this.ADAPTIVE_RULES.LOW_SCORE_THRESHOLD).length;
 
-    const currentIndex = DIFFICULTY_ORDER.indexOf(currentDifficulty);
+    const consecutiveAnalysis = this._analyzeConsecutivePerformance(attempts);
 
-    // 3 consecutive high scores → increase difficulty
-    if (consecutiveHighScores >= this.CONSECUTIVE_THRESHOLD) {
-      const nextIndex = Math.min(
-        currentIndex + 1,
-        DIFFICULTY_ORDER.length - 1
-      );
-      return DIFFICULTY_ORDER[nextIndex];
-    }
+    // Get current difficulty from most recent attempt
+    const currentDifficulty = attempts[0]?.difficulty || DIFFICULTY.EASY;
 
-    // 3 consecutive low scores → decrease difficulty
-    if (consecutiveLowScores >= this.CONSECUTIVE_THRESHOLD) {
-      const prevIndex = Math.max(currentIndex - 1, 0);
-      return DIFFICULTY_ORDER[prevIndex];
-    }
-
-    return currentDifficulty;
+    return {
+      averageScore: Math.round(averageScore),
+      highScoreCount,
+      lowScoreCount,
+      consecutiveHighScores: consecutiveAnalysis.consecutiveHighScores,
+      consecutiveLowScores: consecutiveAnalysis.consecutiveLowScores,
+      currentDifficulty
+    };
   }
 
   /**
-   * @private _countConsecutive
-   * @description Count consecutive high/low scores from recent attempts.
+   * @method _analyzeConsecutivePerformance
+   * @description Analyze consecutive high/low scores
+   * @param {Array} attempts - Quiz attempts (ordered by date desc)
+   * @returns {Object} Consecutive performance analysis
    */
-  _countConsecutive(attempts) {
+  static _analyzeConsecutivePerformance(attempts) {
+    if (!attempts || attempts.length === 0) {
+      return { consecutiveHighScores: 0, consecutiveLowScores: 0 };
+    }
+
     let consecutiveHighScores = 0;
     let consecutiveLowScores = 0;
 
-    // Check from most recent attempt
+    // Analyze from most recent to oldest
     for (const attempt of attempts) {
-      const score = attempt.percentage;
-
-      if (score >= this.HIGH_SCORE) {
+      if (attempt.percentage >= this.ADAPTIVE_RULES.HIGH_SCORE_THRESHOLD) {
         consecutiveHighScores++;
-        consecutiveLowScores = 0;
-      } else if (score <= this.LOW_SCORE) {
+        consecutiveLowScores = 0; // Reset low score counter
+      } else if (attempt.percentage < this.ADAPTIVE_RULES.LOW_SCORE_THRESHOLD) {
         consecutiveLowScores++;
-        consecutiveHighScores = 0;
+        consecutiveHighScores = 0; // Reset high score counter
       } else {
-        // Medium score breaks streak
-        break;
+        // Score in acceptable range - reset both counters
+        consecutiveHighScores = 0;
+        consecutiveLowScores = 0;
+        break; // Stop counting if we hit acceptable range
       }
     }
 
@@ -249,51 +306,128 @@ class AdaptiveService {
   }
 
   /**
-   * @private _calculateTrend
-   * @description Calculate performance trend from score history.
+   * @method _calculateRecommendation
+   * @description Calculate recommended difficulty based on metrics
+   * @param {Object} metrics - Performance metrics
+   * @param {Array} attempts - Recent attempts
+   * @returns {Object} Difficulty recommendation
    */
-  _calculateTrend(scores) {
-    if (scores.length < 2) return 'new';
+  static _calculateRecommendation(metrics, attempts) {
+    const { consecutiveHighScores, consecutiveLowScores, currentDifficulty } = metrics;
 
-    const recent = scores.slice(0, 3);
-    const older = scores.slice(3, 6);
+    let recommendedDifficulty = currentDifficulty;
+    let shouldAdjust = false;
+    let reason = null;
 
-    if (older.length === 0) return 'new';
+    // Check for difficulty progression
+    if (consecutiveHighScores >= this.ADAPTIVE_RULES.CONSECUTIVE_ATTEMPTS) {
+      recommendedDifficulty = this._getNextDifficulty(currentDifficulty, 'increase');
+      shouldAdjust = true;
+      reason = `Excellent performance! ${consecutiveHighScores} consecutive high scores (${this.ADAPTIVE_RULES.HIGH_SCORE_THRESHOLD}%+). Recommended to increase difficulty.`;
+    }
+    // Check for difficulty regression
+    else if (consecutiveLowScores >= this.ADAPTIVE_RULES.CONSECUTIVE_ATTEMPTS) {
+      recommendedDifficulty = this._getNextDifficulty(currentDifficulty, 'decrease');
+      shouldAdjust = true;
+      reason = `Struggling with current level. ${consecutiveLowScores} consecutive low scores (<${this.ADAPTIVE_RULES.LOW_SCORE_THRESHOLD}%). Recommended to decrease difficulty.`;
+    }
+    // Otherwise maintain current difficulty
+    else {
+      reason = 'Performance is within acceptable range. Maintaining current difficulty.';
+    }
 
-    const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
-    const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
-
-    const diff = recentAvg - olderAvg;
-
-    if (diff > 5) return 'improving';
-    if (diff < -5) return 'declining';
-    return 'stable';
+    return {
+      difficulty: recommendedDifficulty,
+      shouldAdjust,
+      reason
+    };
   }
 
   /**
-   * @private _buildAdaptiveMessage
-   * @description Build user-friendly adaptive feedback message.
+   * @method _getNextDifficulty
+   * @description Get next difficulty level based on direction
+   * @param {string} currentDifficulty - Current difficulty
+   * @param {string} direction - 'increase' or 'decrease'
+   * @returns {string} Next difficulty level
    */
-  _buildAdaptiveMessage(changed, from, to, score) {
-    if (!changed) {
-      if (score >= this.HIGH_SCORE) {
-        return `Great score of ${score}%! Keep it up to advance to the next level.`;
-      }
-      if (score <= this.LOW_SCORE) {
-        return `Score of ${score}%. Practice more to improve your performance.`;
-      }
-      return `Good effort! Score: ${score}%.`;
+  static _getNextDifficulty(currentDifficulty, direction) {
+    const currentIndex = this.DIFFICULTY_LEVELS.indexOf(currentDifficulty);
+    
+    if (currentIndex === -1) {
+      return DIFFICULTY.MEDIUM; // Default if invalid
     }
 
-    const isIncrease = DIFFICULTY_ORDER.indexOf(to) >
-      DIFFICULTY_ORDER.indexOf(from);
-
-    if (isIncrease) {
-      return `🎉 Excellent! You've consistently scored high. Difficulty increased to ${to.toUpperCase()}!`;
+    if (direction === 'increase') {
+      const nextIndex = Math.min(currentIndex + 1, this.DIFFICULTY_LEVELS.length - 1);
+      return this.DIFFICULTY_LEVELS[nextIndex];
+    } else if (direction === 'decrease') {
+      const prevIndex = Math.max(currentIndex - 1, 0);
+      return this.DIFFICULTY_LEVELS[prevIndex];
     }
 
-    return `📚 Difficulty adjusted to ${to.toUpperCase()} to help you build confidence.`;
+    return currentDifficulty;
+  }
+
+  /**
+   * @method getUserPerformanceStats
+   * @description Get comprehensive user performance statistics
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} User performance statistics
+   */
+  static async getUserPerformanceStats(userId) {
+    try {
+      const allAttempts = await QuizAttempt.find({
+        userId,
+        status: ATTEMPT_STATUS.COMPLETED
+      }).sort({ completedAt: -1 });
+
+      if (!allAttempts || allAttempts.length === 0) {
+        return {
+          totalAttempts: 0,
+          averageScore: 0,
+          highestScore: 0,
+          lowestScore: 0,
+          difficultyDistribution: { easy: 0, medium: 0, hard: 0 },
+          currentDifficulty: DIFFICULTY.EASY
+        };
+      }
+
+      const scores = allAttempts.map(a => a.percentage);
+      const averageScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+      const highestScore = Math.max(...scores);
+      const lowestScore = Math.min(...scores);
+
+      // Calculate difficulty distribution
+      const difficultyDistribution = {
+        easy: allAttempts.filter(a => a.difficulty === DIFFICULTY.EASY).length,
+        medium: allAttempts.filter(a => a.difficulty === DIFFICULTY.MEDIUM).length,
+        hard: allAttempts.filter(a => a.difficulty === DIFFICULTY.HARD).length
+      };
+
+      // Get user's current difficulty
+      const user = await User.findById(userId);
+      const currentDifficulty = user?.currentDifficulty || DIFFICULTY.EASY;
+
+      return {
+        totalAttempts: allAttempts.length,
+        averageScore: Math.round(averageScore),
+        highestScore,
+        lowestScore,
+        difficultyDistribution,
+        currentDifficulty,
+        recentAttempts: allAttempts.slice(0, 10).map(attempt => ({
+          quizId: attempt.quizId,
+          score: attempt.percentage,
+          difficulty: attempt.difficulty,
+          completedAt: attempt.completedAt,
+          timeTaken: attempt.timeTaken
+        }))
+      };
+    } catch (error) {
+      logger.error(`[Adaptive Engine] Performance stats error: ${error.message}`);
+      throw error;
+    }
   }
 }
 
-module.exports = new AdaptiveService();
+module.exports = AdaptiveService;

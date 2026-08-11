@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Brain, Bell, Menu, LogOut, User, Settings,
-  Swords, ChevronDown,
+  Swords, ChevronDown, TrendingUp,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store.js';
 import { useUIStore } from '../../store/ui.store.js';
@@ -61,6 +61,19 @@ const Navbar = () => {
       >
         <Swords size={16} />
         Battle Mode
+      </Link>
+
+      {/* Module 05: Adaptive Analytics Link */}
+      <Link
+        to={ROUTES.QUIZ_HISTORY}
+        className="hidden md:flex items-center gap-2 px-4 py-2
+                   bg-gradient-to-r from-purple-600/20 to-indigo-600/20
+                   border border-purple-500/30 rounded-xl
+                   text-purple-400 hover:text-purple-300
+                   transition-all duration-200 text-sm font-medium"
+      >
+        <TrendingUp size={16} />
+        Performance
       </Link>
 
       {/* User XP */}

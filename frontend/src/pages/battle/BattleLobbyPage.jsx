@@ -25,7 +25,7 @@ const BattleLobbyPage = () => {
     leaveMatchmaking,
   } = useBattle();
 
-  const { socket } = useSocket();
+  const { socket, isAvailable } = useSocket();
   const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
   const [waitTime, setWaitTime] = useState(0);
 
@@ -51,6 +51,52 @@ const BattleLobbyPage = () => {
   const handleJoinQueue = () => {
     joinMatchmaking(selectedDifficulty);
   };
+
+  // ─── Socket Not Available Warning ─────────────────────────────────────────
+  if (!isAvailable) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center">
+        <Card className="max-w-md mx-auto text-center py-12">
+          <div className="w-16 h-16 mx-auto mb-4 bg-orange-500/20 rounded-full flex items-center justify-center">
+            <Target size={32} className="text-orange-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-dark-50 mb-2">
+            Battle Mode Unavailable
+          </h2>
+          <p className="text-dark-400 mb-6">
+            Real-time battle mode requires Socket.IO connection. 
+            The server may not have Socket.IO configured.
+          </p>
+          <Button variant="secondary" onClick={() => window.location.reload()}>
+            Retry Connection
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // ─── Socket Not Available Warning ─────────────────────────────────────────
+  if (!isAvailable) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center">
+        <Card className="max-w-md mx-auto text-center py-12">
+          <div className="w-16 h-16 mx-auto mb-4 bg-orange-500/20 rounded-full flex items-center justify-center">
+            <Target size={32} className="text-orange-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-dark-50 mb-2">
+            Battle Mode Unavailable
+          </h2>
+          <p className="text-dark-400 mb-6">
+            Real-time battle mode requires Socket.IO connection. 
+            The server may not have Socket.IO configured.
+          </p>
+          <Button variant="secondary" onClick={() => window.location.reload()}>
+            Retry Connection
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   // ─── Match Found State ─────────────────────────────────────────────────────
   if (matchmakingStatus === 'matched' && players.length > 0) {

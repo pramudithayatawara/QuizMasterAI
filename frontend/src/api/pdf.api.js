@@ -54,6 +54,9 @@ export const pdfAPI = {
     return this.upload(data, onUploadProgress);
   },
 
+  getAll: (params = {}) =>
+    axiosInstance.get('/api/v1/pdfs', { params }),
+
   getPdfs: (params = {}) =>
     axiosInstance.get('/api/v1/pdfs', { params }),
 

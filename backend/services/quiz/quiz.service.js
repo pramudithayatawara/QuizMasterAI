@@ -4,6 +4,7 @@ const Quiz = require('../../models/Quiz.model');
 const QuizAttempt = require('../../models/QuizAttempt.model');
 const ragService = require('../rag/rag.service');
 const adaptiveService = require('../adaptive/adaptive.service');
+const feedbackService = require('../feedback/feedback.service');
 const { DIFFICULTY_TIMERS } = require('../../constants/difficulty');
 const { QUIZ_STATUS, ATTEMPT_STATUS } = require('../../constants/quiz');
 const { evaluateAnswers } = require('../../helpers/score.helper');
@@ -105,13 +106,17 @@ class QuizService {
       difficulty
     );
 
-    // Step 7: Calculate time limit based on difficulty
-    const timeLimit = DIFFICULTY_TIMERS[difficulty] || 15;
+    // Step 7: Calculate time limit based on difficulty - Module 05
+    const adaptiveService = require('../adaptive/adaptive.service');
+    const timeLimit = options.timeLimit || adaptiveService.getTimeLimit(difficulty);
 
     // Step 8: Generate quiz title
-    const title = this._generateQuizTitle(pdf.originalName, difficulty);
+    const title = options.title || this._generateQuizTitle(pdf.originalName, difficulty);
 
-    // Step 9: Save quiz to database
+    // Step 9: Calculate difficulty breakdown - Module 04
+    const difficultyBreakdown = this._calculateDifficultyBreakdown(processedQuestions);
+
+    // Step 10: Save quiz to database
     const contextReferences = relevantChunks.map(chunk => ({
       chunkIndex: chunk.chunkIndex,
       text: chunk.text.substring(0, 200) + '...', // Store first 200 chars for reference
@@ -127,10 +132,11 @@ class QuizService {
       mcqCount: processedQuestions.filter((q) => q.type === 'mcq').length,
       trueFalseCount: processedQuestions.filter((q) => q.type === 'true_false').length,
       difficulty,
+      difficultyBreakdown,
       timeLimit,
       status: QUIZ_STATUS.READY,
       retrievedChunks: relevantChunks.map(c => c.chunkIndex),
-      generationModel: 'gemini-1.5-pro',
+      generationModel: 'gemini-1.5-flash-latest',
       contextReferences,
     });
 
@@ -210,13 +216,13 @@ class QuizService {
 
   /**
    * @private _constructQuizPrompt
-   * @description Construct prompt for Gemini AI with context and requirements.
+   * @description Construct prompt for Gemini AI with context and requirements - Module 04 Difficulty Classification.
    */
   _constructQuizPrompt(context, difficulty, questionCount) {
     const mcqCount = Math.ceil(questionCount * 0.6); // 60% MCQs
     const tfCount = questionCount - mcqCount; // 40% True/False
 
-    return `You are an expert educational content creator. Generate a quiz based STRICTLY on the following context from a PDF document.
+    return `You are an expert educational content creator and pedagogical assessment specialist. Generate a quiz based STRICTLY on the following context from a PDF document.
 
 CONTEXT:
 ${context}
@@ -225,26 +231,54 @@ REQUIREMENTS:
 1. Generate exactly ${questionCount} questions total:
    - ${mcqCount} Multiple Choice Questions (MCQs)
    - ${tfCount} True/False Questions
-2. Difficulty level: ${difficulty}
-3. For MCQs: Provide exactly 4 options (A, B, C, D) with exactly ONE correct answer
-4. For True/False: Provide options A (True) and B (False) with exactly ONE correct answer
-5. Ensure all questions are based ONLY on the provided context
-6. Avoid duplicate questions
-7. Questions should test understanding of the key concepts in the context
-8. Provide a brief explanation for each correct answer
+2. For MCQs: Provide exactly 4 options (A, B, C, D) with exactly ONE correct answer
+3. For True/False: Provide options A (True) and B (False) with exactly ONE correct answer
+4. Ensure all questions are based ONLY on the provided context
+5. Avoid duplicate questions
+6. Provide a brief explanation for each correct answer
+
+MODULE 04 - AI DIFFICULTY CLASSIFICATION:
+For EACH question, you must analyze and classify its difficulty based on these 4 criteria:
+
+1. Concept Complexity:
+   - Easy: Direct recall of facts, definitions, or basic concepts
+   - Medium: Understanding relationships, applying concepts to scenarios
+   - Hard: Multi-concept synthesis, complex analysis, or integration
+
+2. Context Length:
+   - Easy: Short, simple text (under 50 words)
+   - Medium: Moderate complexity (50-100 words)
+   - Hard: Detailed, technical text (over 100 words)
+
+3. Required Reasoning:
+   - Easy: Single-step retrieval
+   - Medium: Multi-step deduction or application
+   - Hard: Complex problem-solving or evaluation
+
+4. Bloom's Taxonomy Level:
+   - Easy: Remember, Understand
+   - Medium: Apply, Analyze
+   - Hard: Evaluate, Create
+
+Difficulty Classification Rules:
+- Assign 'easy' if question involves basic recall/understanding with simple reasoning
+- Assign 'medium' if question requires application/analysis with moderate complexity
+- Assign 'hard' if question involves evaluation/creation with complex reasoning
+- Each question must have a consistent difficulty across all 4 criteria
+- Provide a brief explanation for the difficulty classification in 'classificationReason'
 
 IMPORTANT:
 - Base your questions EXCLUSIVELY on the provided context
 - Do not use external knowledge
 - Make questions clear and unambiguous
 - Ensure options are plausible but clearly distinguishable
-- Mark the correct answer in the correctAnswer field`;
-
+- Mark the correct answer in the correctAnswer field
+- Difficulty classification must be consistent with the question's cognitive demand`;
   }
 
   /**
    * @private _getQuizJSONSchema
-   * @description Define JSON schema for structured output from Gemini.
+   * @description Define JSON schema for structured output from Gemini - Module 04 Difficulty Classification.
    */
   _getQuizJSONSchema() {
     return {
@@ -279,16 +313,34 @@ IMPORTANT:
                 enum: ["A", "B", "C", "D"],
                 description: "The correct option letter"
               },
+              difficulty: {
+                type: "string",
+                enum: ["easy", "medium", "hard"],
+                description: "Question difficulty level based on concept complexity, context length, reasoning required, and Bloom's taxonomy"
+              },
+              bloomsTaxonomy: {
+                type: "string",
+                enum: ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"],
+                description: "Bloom's taxonomy level that best describes the cognitive demand"
+              },
+              classificationReason: {
+                type: "string",
+                description: "Brief explanation (1-2 sentences) for why this difficulty was assigned"
+              },
+              contextChunkId: {
+                type: "number",
+                description: "Reference to the source chunk index from context"
+              },
               explanation: {
                 type: "string",
                 description: "Brief explanation of the correct answer"
               },
               topic: {
                 type: "string",
-                description: "Topic/category of the question"
+                description: "Topic or category of the question"
               }
             },
-            required: ["questionText", "type", "options", "correctAnswer", "explanation", "topic"]
+            required: ["questionText", "type", "options", "correctAnswer", "difficulty", "bloomsTaxonomy", "classificationReason", "explanation", "topic"]
           }
         }
       },
@@ -304,7 +356,7 @@ IMPORTANT:
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ 
-        model: 'gemini-1.5-pro',
+        model: 'gemini-1.5-flash-latest',
         generationConfig: {
           temperature: 0.7,
           topK: 40,
@@ -384,7 +436,11 @@ IMPORTANT:
           },
           correctAnswer: 'A',
           explanation: 'Based on the provided context.',
-          topic: 'General'
+          topic: 'General',
+          difficulty: 'medium',
+          bloomsTaxonomy: 'Understand',
+          classificationReason: 'Fallback: Requires understanding of main concepts',
+          contextChunkId: 0
         });
       }
     }
@@ -404,7 +460,11 @@ IMPORTANT:
           },
           correctAnswer: 'A',
           explanation: 'Based on the provided context.',
-          topic: 'General'
+          topic: 'General',
+          difficulty: 'easy',
+          bloomsTaxonomy: 'Remember',
+          classificationReason: 'Fallback: Basic recall question',
+          contextChunkId: 0
         });
       }
     }
@@ -422,7 +482,11 @@ IMPORTANT:
         },
         correctAnswer: 'A',
         explanation: 'Fallback generated question.',
-        topic: 'General'
+        topic: 'General',
+        difficulty: 'medium',
+        bloomsTaxonomy: 'Understand',
+        classificationReason: 'Fallback: Standard comprehension question',
+        contextChunkId: 0
       });
     }
     
@@ -456,14 +520,55 @@ IMPORTANT:
         correctAnswer: q.correctAnswer,
         explanation: q.explanation,
         topic: q.topic || 'General',
-        difficulty: difficulty,
-        bloomsLevel: this._inferBloomsLevel(q.questionText, difficulty),
+        // Module 04: Use AI-classified difficulty if available, otherwise use parameter
+        difficulty: q.difficulty || difficulty,
+        // Module 04: Use AI-classified Bloom's taxonomy if available
+        bloomsTaxonomy: q.bloomsTaxonomy || this._mapBloomsLevel(q.bloomsTaxonomy || 'Understand'),
+        classificationReason: q.classificationReason || 'Default classification',
+        // Legacy field for backward compatibility
+        bloomsLevel: this._mapBloomsLevel(q.bloomsTaxonomy || 'Understand'),
         sourceChunkIndex: relevantChunk ? relevantChunk.chunkIndex : null,
         conceptComplexity: 5,
         reasoningRequired: 5,
         order: index + 1,
       };
     }).filter(q => q !== null); // Remove null entries (duplicates)
+  }
+
+  /**
+   * @private _mapBloomsLevel
+   * @description Map Bloom's taxonomy level from capital case to lowercase.
+   */
+  _mapBloomsLevel(bloomsLevel) {
+    const mapping = {
+      'Remember': 'remember',
+      'Understand': 'understand',
+      'Apply': 'apply',
+      'Analyze': 'analyze',
+      'Evaluate': 'evaluate',
+      'Create': 'create'
+    };
+    return mapping[bloomsLevel] || 'understand';
+  }
+
+  /**
+   * @private _calculateDifficultyBreakdown
+   * @description Calculate difficulty breakdown counters for quiz - Module 04.
+   */
+  _calculateDifficultyBreakdown(questions) {
+    const breakdown = {
+      easy: 0,
+      medium: 0,
+      hard: 0
+    };
+
+    questions.forEach(question => {
+      if (question.difficulty === 'easy') breakdown.easy++;
+      else if (question.difficulty === 'medium') breakdown.medium++;
+      else if (question.difficulty === 'hard') breakdown.hard++;
+    });
+
+    return breakdown;
   }
 
   /**
@@ -639,7 +744,30 @@ IMPORTANT:
     // Evaluate answers
     const evaluation = evaluateAnswers(answers, quiz.questions);
 
-    // Update attempt
+    // Module 06: Calculate topic accuracy and performance metrics
+    const topicAccuracy = feedbackService.calculateTopicAccuracy(evaluation.details);
+    const performanceMetrics = feedbackService.calculatePerformanceMetrics(evaluation.details, actualTime);
+
+    // Module 06: Get recent performance for trend analysis
+    const recentAttempts = await QuizAttempt.getLastNAttempts(userId, 5);
+    const recentPerformance = recentAttempts.length >= 3;
+
+    // Module 06: Generate AI feedback
+    const aiFeedback = await feedbackService.generateFeedback({
+      userId,
+      scorePercentage: evaluation.percentage,
+      correctCount: evaluation.correct,
+      wrongCount: evaluation.wrong,
+      skippedCount: evaluation.skipped,
+      totalQuestions: evaluation.total,
+      difficultyPlayed: quiz.difficulty,
+      weakTopics: evaluation.weakTopics,
+      topicAccuracy,
+      timeTakenSeconds: actualTime,
+      recentPerformance,
+    });
+
+    // Update attempt with Module 05 adaptive fields and Module 06 feedback
     await QuizAttempt.findByIdAndUpdate(attemptId, {
       answers: evaluation.details.map((d) => ({
         questionId: d.questionId,
@@ -657,11 +785,29 @@ IMPORTANT:
       isAutoSubmitted: isAutoSubmit,
       completedAt: new Date(),
       weakTopics: evaluation.weakTopics,
+      // Module 05: Adaptive engine fields
+      previousDifficulty: attempt.difficulty,
+      adaptiveAdjustment: 'maintained', // Will be updated by adaptive service
+      // Module 06: AI Feedback and Performance Metrics
+      aiFeedback: {
+        summary: aiFeedback.summary,
+        suggestedImprovements: aiFeedback.suggestedImprovements,
+        recommendedTopicsToReview: aiFeedback.recommendedTopicsToReview,
+        confidenceLevel: aiFeedback.confidenceLevel,
+        feedbackGeneratedAt: aiFeedback.feedbackGeneratedAt,
+      },
+      performanceMetrics: {
+        averageTimePerQuestion: performanceMetrics.averageTimePerQuestion,
+        fastestQuestionTime: performanceMetrics.fastestQuestionTime,
+        slowestQuestionTime: performanceMetrics.slowestQuestionTime,
+        topicAccuracy,
+      },
     });
 
     logger.info(
       `Quiz submitted: ${attemptId} | Score: ${evaluation.percentage}% | ` +
-      `Correct: ${evaluation.correct}/${evaluation.total}`
+      `Correct: ${evaluation.correct}/${evaluation.total} | ` +
+      `AI Feedback: ${aiFeedback.confidenceLevel} confidence`
     );
 
     return {
@@ -670,6 +816,10 @@ IMPORTANT:
       timeTaken: actualTime,
       isAutoSubmitted: isAutoSubmit,
       difficulty: quiz.difficulty,
+      // Module 06: Include AI feedback and additional metrics
+      aiFeedback,
+      topicAccuracy,
+      performanceMetrics,
     };
   }
 

@@ -81,7 +81,7 @@ const config = {
   // Gemini
   GEMINI: {
     API_KEY: process.env.GEMINI_API_KEY,
-    MODEL: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    MODEL: process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest',
   },
 
   // AI Provider selection

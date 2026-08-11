@@ -21,8 +21,10 @@ export const ROUTES = {
 
   // Quiz
   QUIZ_LIST:       '/quizzes',
+  QUIZ_CREATE:     '/quizzes/create',
   QUIZ_PLAY:       '/quizzes/:id/play',
   QUIZ_RESULT:     '/quizzes/:id/result',
+  QUIZ_HISTORY:    '/quizzes/history',
 
   // Battle
   BATTLE_LOBBY:    '/battle',

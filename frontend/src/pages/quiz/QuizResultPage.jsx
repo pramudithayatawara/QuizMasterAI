@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import {
   Trophy, Target, Clock, TrendingUp,
   CheckCircle, XCircle, Home, RotateCcw,
-  Brain, AlertCircle, Award,
+  Brain, Award, ArrowUp, ArrowDown, Sparkles, X,
+  AlertCircle, BookOpen, Zap,
 } from 'lucide-react';
 import { quizAPI } from '../../api/quiz.api.js';
 import { ROUTES } from '../../constants/routes.js';
@@ -12,6 +13,8 @@ import Card from '../../components/common/Card.jsx';
 import Button from '../../components/common/Button.jsx';
 import ProgressBar from '../../components/common/ProgressBar.jsx';
 import Spinner from '../../components/common/Spinner.jsx';
+import AdaptiveBadge from '../../components/quiz/AdaptiveBadge.jsx';
+import AIFeedback from '../../components/quiz/AIFeedback.jsx';
 import { formatDuration, formatScore } from '../../utils/formatters.js';
 import { cn } from '../../utils/helpers.js';
 import toast from 'react-hot-toast';
@@ -64,6 +67,38 @@ const QuizResultPage = () => {
   }
 
   const { value: scoreText, color: scoreColor } = formatScore(result.percentage);
+  
+  // Module 05: Adaptive difficulty change notification
+  const [showAdaptiveNotification, setShowAdaptiveNotification] = useState(false);
+  const [adaptiveInfo, setAdaptiveInfo] = useState(null);
+  
+  // Module 06: AI Feedback state
+  const [aiFeedback, setAiFeedback] = useState(null);
+  const [topicAccuracy, setTopicAccuracy] = useState(null);
+  const [performanceMetrics, setPerformanceMetrics] = useState(null);
+  
+  useEffect(() => {
+    // Check if this result has adaptive information
+    if (result.adaptive && result.adaptive.shouldAdjust) {
+      setAdaptiveInfo(result.adaptive);
+      setShowAdaptiveNotification(true);
+    }
+    
+    // Module 06: Check for AI feedback
+    if (result.aiFeedback) {
+      setAiFeedback(result.aiFeedback);
+    }
+    
+    // Module 06: Check for topic accuracy
+    if (result.topicAccuracy) {
+      setTopicAccuracy(result.topicAccuracy);
+    }
+    
+    // Module 06: Check for performance metrics
+    if (result.performanceMetrics) {
+      setPerformanceMetrics(result.performanceMetrics);
+    }
+  }, [result]);
 
   const stats = [
     {
@@ -100,8 +135,164 @@ const QuizResultPage = () => {
     },
   ];
 
+  // Module 06: Additional performance stats
+  const additionalStats = [];
+  
+  if (result.difficulty) {
+    additionalStats.push({
+      label: 'Difficulty',
+      value: result.difficulty.charAt(0).toUpperCase() + result.difficulty.slice(1),
+      icon: Brain,
+      color: result.difficulty === 'hard' ? 'text-purple-400' : result.difficulty === 'medium' ? 'text-blue-400' : 'text-emerald-400',
+      bg: result.difficulty === 'hard' ? 'bg-purple-500/10' : result.difficulty === 'medium' ? 'bg-blue-500/10' : 'bg-emerald-500/10',
+    });
+  }
+  
+  if (result.skippedCount > 0) {
+    additionalStats.push({
+      label: 'Skipped',
+      value: result.skippedCount,
+      icon: AlertCircle,
+      color: 'text-yellow-400',
+      bg: 'bg-yellow-500/10',
+    });
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+      {/* ─── Module 05: Adaptive Difficulty Change Notification ──────────────── */}
+      {showAdaptiveNotification && adaptiveInfo && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`p-4 rounded-xl border ${
+            adaptiveInfo.newDifficulty === 'hard'
+              ? 'bg-emerald-500/10 border-emerald-500/30'
+              : adaptiveInfo.newDifficulty === 'easy'
+              ? 'bg-yellow-500/10 border-yellow-500/30'
+              : 'bg-blue-500/10 border-blue-500/30'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0">
+              {adaptiveInfo.newDifficulty === 'hard' ? (
+                <ArrowUp size={20} className="text-emerald-400" />
+              ) : adaptiveInfo.newDifficulty === 'easy' ? (
+                <ArrowDown size={20} className="text-yellow-400" />
+              ) : (
+                <Sparkles size={20} className="text-blue-400" />
+              )}
+            </div>
+            <div className="flex-1">
+              <p className={`font-semibold text-sm ${
+                adaptiveInfo.newDifficulty === 'hard'
+                  ? 'text-emerald-400'
+                  : adaptiveInfo.newDifficulty === 'easy'
+                  ? 'text-yellow-400'
+                  : 'text-blue-400'
+              }`}>
+                {adaptiveInfo.newDifficulty === 'hard'
+                  ? '🎉 Difficulty Upgraded!'
+                  : adaptiveInfo.newDifficulty === 'easy'
+                  ? '📚 Difficulty Adjusted'
+                  : '✨ Difficulty Maintained'}
+              </p>
+              <p className="text-xs text-dark-400 mt-1">
+                {adaptiveInfo.adjustmentReason}
+              </p>
+              <p className="text-xs text-dark-500 mt-1">
+                {adaptiveInfo.previousDifficulty?.charAt(0).toUpperCase() + adaptiveInfo.previousDifficulty?.slice(1)} → {adaptiveInfo.newDifficulty?.charAt(0).toUpperCase() + adaptiveInfo.newDifficulty?.slice(1)}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAdaptiveNotification(false)}
+              className="text-dark-400 hover:text-dark-300 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ─── Module 04: Difficulty Breakdown Bar ───────────────────────────────── */}
+      {result.difficultyBreakdown && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Card padding="md">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-dark-200">Question Difficulty Distribution</span>
+              <div className="flex gap-3 text-xs">
+                <span className="text-emerald-400">Easy: {result.difficultyBreakdown.easy}</span>
+                <span className="text-yellow-400">Medium: {result.difficultyBreakdown.medium}</span>
+                <span className="text-red-400">Hard: {result.difficultyBreakdown.hard}</span>
+              </div>
+            </div>
+            <div className="h-3 bg-dark-700 rounded-full overflow-hidden flex">
+              {result.difficultyBreakdown.easy > 0 && (
+                <div 
+                  className="bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${(result.difficultyBreakdown.easy / result.totalQuestions) * 100}%` }}
+                />
+              )}
+              {result.difficultyBreakdown.medium > 0 && (
+                <div 
+                  className="bg-yellow-500 transition-all duration-500"
+                  style={{ width: `${(result.difficultyBreakdown.medium / result.totalQuestions) * 100}%` }}
+                />
+              )}
+              {result.difficultyBreakdown.hard > 0 && (
+                <div 
+                  className="bg-red-500 transition-all duration-500"
+                  style={{ width: `${(result.difficultyBreakdown.hard / result.totalQuestions) * 100}%` }}
+                />
+              )}
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* ─── Module 06: Weak Topics Card ────────────────────────────────────────── */}
+      {result.weakTopics && result.weakTopics.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card padding="md" className="bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-yellow-500/30">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center">
+                <AlertCircle size={20} className="text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-yellow-400">Topics to Review</h3>
+                <p className="text-xs text-dark-400">These areas need more attention</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {result.weakTopics.map((topic, index) => (
+                <span
+                  key={index}
+                  className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 text-sm font-medium border border-yellow-500/30 flex items-center gap-2"
+                >
+                  <BookOpen size={14} />
+                  {topic}
+                </span>
+              ))}
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* ─── Module 06: AI Feedback Component ─────────────────────────────────── */}
+      <AIFeedback 
+        aiFeedback={aiFeedback}
+        topicAccuracy={topicAccuracy}
+        performanceMetrics={performanceMetrics}
+      />
+
       {/* ─── Celebration Header ───────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
@@ -136,9 +327,9 @@ const QuizResultPage = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+        className="grid grid-cols-2 lg:grid-cols-6 gap-4"
       >
-        {stats.map((stat, index) => {
+        {[...stats, ...additionalStats].map((stat, index) => {
           const Icon = stat.icon;
           return (
             <motion.div

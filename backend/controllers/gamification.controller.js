@@ -13,6 +13,7 @@ const asyncHandler = require('../utils/asyncHandler');
 class GamificationController {
   /**
    * @route   GET /api/v1/gamification/profile
+   * @route   GET /api/v1/gamification/profile/me
    * @desc    Get gamification profile
    * @access  Private
    */

@@ -23,8 +23,10 @@ const PDFManagerPage      = lazy(() => import('../pages/pdf/PdfManagerPage.jsx')
 const PDFDetailPage        = lazy(() => import('../pages/pdf/PDFDetailPage.jsx'));
 
 const QuizListPage         = lazy(() => import('../pages/quiz/QuizListPage.jsx'));
+const CreateQuizPage       = lazy(() => import('../pages/quiz/CreateQuizPage.jsx'));
 const QuizPlayPage         = lazy(() => import('../pages/quiz/QuizPlayPage.jsx'));
 const QuizResultPage       = lazy(() => import('../pages/quiz/QuizResultPage.jsx'));
+const QuizHistoryPage      = lazy(() => import('../pages/quiz/QuizHistoryPage.jsx'));
 
 const BattleLobbyPage      = lazy(() => import('../pages/battle/BattleLobbyPage.jsx'));
 const BattlePlayPage       = lazy(() => import('../pages/battle/BattlePlayPage.jsx'));
@@ -74,6 +76,8 @@ const AppRoutes = () => (
           <Route path={ROUTES.PDF_LIST}     element={<PDFManagerPage />} />
           <Route path={ROUTES.PDF_DETAIL}   element={<PDFDetailPage />} />
           <Route path={ROUTES.QUIZ_LIST}    element={<QuizListPage />} />
+          <Route path={ROUTES.QUIZ_CREATE}  element={<CreateQuizPage />} />
+          <Route path={ROUTES.QUIZ_HISTORY} element={<QuizHistoryPage />} />
           <Route path={ROUTES.QUIZ_PLAY}    element={<QuizPlayPage />} />
           <Route path={ROUTES.QUIZ_RESULT}  element={<QuizResultPage />} />
           <Route path={ROUTES.BATTLE_LOBBY} element={<BattleLobbyPage />} />

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Flag, Clock,
-  CheckCircle, XCircle, AlertCircle,
+  CheckCircle, XCircle, AlertCircle, Info, Timer,
 } from 'lucide-react';
 import { useQuizStore } from '../../store/quiz.store.js';
 import { ROUTES } from '../../constants/routes.js';
@@ -13,6 +13,7 @@ import ProgressBar from '../../components/common/ProgressBar.jsx';
 import Spinner from '../../components/common/Spinner.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import QuizTimer from '../../components/quiz/QuizTimer.jsx';
+import AdaptiveBadge from '../../components/quiz/AdaptiveBadge.jsx';
 import { cn } from '../../utils/helpers.js';
 import toast from 'react-hot-toast';
 
@@ -43,6 +44,42 @@ const QuizPlayPage = () => {
 
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showAutoSubmitModal, setShowAutoSubmitModal] = useState(false);
+  const [quizStartTime, setQuizStartTime] = useState(null);
+  const [adaptiveNotification, setAdaptiveNotification] = useState(null);
+
+  // ─── Difficulty Badge Helper - Module 04 ─────────────────────────────────────
+  const getDifficultyBadge = (difficulty) => {
+    const config = {
+      easy: {
+        label: 'Easy',
+        className: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30'
+      },
+      medium: {
+        label: 'Medium',
+        className: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-500/20 dark:text-yellow-400 dark:border-yellow-500/30'
+      },
+      hard: {
+        label: 'Hard',
+        className: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/30'
+      }
+    };
+    return config[difficulty] || config.medium;
+  };
+
+  // ─── Bloom's Taxonomy Color Helper - Module 04 ────────────────────────────────
+  const getBloomColor = (bloomsLevel) => {
+    const colors = {
+      'Remember': 'text-blue-400',
+      'Understand': 'text-green-400',
+      'Apply': 'text-yellow-400',
+      'Analyze': 'text-orange-400',
+      'Evaluate': 'text-red-400',
+      'Create': 'text-purple-400'
+    };
+    return colors[bloomsLevel] || 'text-gray-400';
+  };
 
   // ─── Initialize Quiz ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -51,6 +88,9 @@ const QuizPlayPage = () => {
       if (!result.success) {
         toast.error('Failed to start quiz.');
         navigate(ROUTES.QUIZ_LIST);
+      } else {
+        // Module 05: Record quiz start time for accurate time tracking
+        setQuizStartTime(Date.now());
       }
     };
     init();
@@ -58,7 +98,7 @@ const QuizPlayPage = () => {
     return () => clearQuizState();
   }, [id]);
 
-  // ─── Timer Countdown ──────────────────────────────────────────────────────
+  // ─── Timer Countdown with Auto-Submit - Module 05 ─────────────────────────────
   useEffect(() => {
     if (!currentQuiz || timeRemaining <= 0) return;
 
@@ -68,17 +108,54 @@ const QuizPlayPage = () => {
 
       if (newTime <= 0 && !autoSubmitted) {
         setAutoSubmitted(true);
-        handleSubmit(true);
+        setShowAutoSubmitModal(true);
+        // Auto-submit after showing modal
+        setTimeout(() => {
+          handleSubmit(true);
+        }, 2000);
       }
     }, 1000);
 
     return () => clearInterval(interval);
   }, [currentQuiz, timeRemaining, autoSubmitted]);
 
-  // ─── Submit Handler ───────────────────────────────────────────────────────
+  // ─── Submit Handler with Time Tracking - Module 05 ─────────────────────────────
   const handleSubmit = async (isTimeout = false) => {
-    const result = await submitQuiz(isTimeout);
+    // Module 05: Calculate exact time taken
+    const timeTakenSeconds = quizStartTime 
+      ? Math.floor((Date.now() - quizStartTime) / 1000)
+      : (currentQuiz?.timeLimit * 60) - timeRemaining;
+
+    const result = await submitQuiz(isTimeout, timeTakenSeconds);
+    
     if (result.success) {
+      // Module 05: Check for adaptive difficulty adjustment
+      if (result.adaptive && result.adaptive.shouldAdjust) {
+        const notificationType = result.adaptive.newDifficulty === 'hard' ? 'upgraded' : 'downgraded';
+        setAdaptiveNotification({
+          type: notificationType,
+          previousDifficulty: result.adaptive.previousDifficulty,
+          newDifficulty: result.adaptive.newDifficulty,
+          reason: result.adaptive.adjustmentReason
+        });
+        
+        // Show adaptive notification
+        setTimeout(() => {
+          toast.success(
+            notificationType === 'upgraded' 
+              ? '🎉 Great job! Your adaptive difficulty has been upgraded!' 
+              : 'Let\'s build your foundation! Difficulty adjusted for better learning.'
+          );
+        }, 1000);
+      }
+      
+      // Module 06: Show AI feedback notification
+      if (result.aiFeedback && result.aiFeedback.confidenceLevel === 'high') {
+        setTimeout(() => {
+          toast.success('🤖 AI feedback generated successfully!');
+        }, 1500);
+      }
+      
       navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id));
     }
   };
@@ -109,9 +186,10 @@ const QuizPlayPage = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* ─── Quiz Header ──────────────────────────────────────────────────── */}
-      <Card padding="md">
-        <div className="flex items-center justify-between mb-4">
+      {/* ─── Module 05: Sticky Header with Timer ─────────────────────────────── */}
+      <div className="sticky top-16 z-20 mb-6">
+        <Card padding="md">
+          <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-dark-50 mb-1">
               {currentQuiz.title}
@@ -120,8 +198,75 @@ const QuizPlayPage = () => {
               Question {questionIndex + 1} of {currentQuiz.questions.length}
             </p>
           </div>
-          <QuizTimer timeRemaining={timeRemaining} />
+          {/* Module 05: Enhanced Quiz Timer with progress bar and auto-submit */}
+          <QuizTimer 
+            timeRemaining={timeRemaining}
+            totalTime={currentQuiz.timeLimit * 60} // Convert minutes to seconds
+            onTimeout={() => {
+              if (!autoSubmitted) {
+                setAutoSubmitted(true);
+                setShowAutoSubmitModal(true);
+                // Auto-submit after showing modal
+                setTimeout(() => {
+                  handleSubmit(true);
+                }, 2000);
+              }
+            }}
+            difficulty={currentQuiz.difficulty}
+          />
         </div>
+        </Card>
+      </div>
+
+      {/* ─── Quiz Content ──────────────────────────────────────────────────── */}
+      <Card padding="md">
+        <ProgressBar
+          value={progress}
+          max={100}
+          color="primary"
+          size="md"
+          showLabel={false}
+        />
+      </Card>
+      </div>
+
+      {/* ─── Quiz Content ──────────────────────────────────────────────────── */}
+      <Card padding="md">
+        {/* Module 04: Difficulty Breakdown Bar */}
+        {currentQuiz.difficultyBreakdown && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-dark-400 font-medium">Difficulty Distribution</span>
+              <div className="flex gap-2 text-xs">
+                <span className="text-emerald-400">Easy: {currentQuiz.difficultyBreakdown.easy}</span>
+                <span className="text-yellow-400">Medium: {currentQuiz.difficultyBreakdown.medium}</span>
+                <span className="text-red-400">Hard: {currentQuiz.difficultyBreakdown.hard}</span>
+              </div>
+            </div>
+            <div className="h-2 bg-dark-700 rounded-full overflow-hidden flex">
+              {currentQuiz.difficultyBreakdown.easy > 0 && (
+                <div 
+                  className="bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${(currentQuiz.difficultyBreakdown.easy / currentQuiz.totalQuestions) * 100}%` }}
+                />
+              )}
+              {currentQuiz.difficultyBreakdown.medium > 0 && (
+                <div 
+                  className="bg-yellow-500 transition-all duration-300"
+                  style={{ width: `${(currentQuiz.difficultyBreakdown.medium / currentQuiz.totalQuestions) * 100}%` }}
+                />
+              )}
+              {currentQuiz.difficultyBreakdown.hard > 0 && (
+                <div 
+                  className="bg-red-500 transition-all duration-300"
+                  style={{ width: `${(currentQuiz.difficultyBreakdown.hard / currentQuiz.totalQuestions) * 100}%` }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Question Progress */}
         <ProgressBar
           value={progress}
           max={100}
@@ -160,6 +305,50 @@ const QuizPlayPage = () => {
                   </p>
                 </div>
               )}
+
+              {/* Module 04: Difficulty Classification Badges */}
+              <div className="ml-11 flex flex-wrap items-center gap-2 mt-3">
+                {/* Difficulty Badge */}
+                {currentQuestion.difficulty && (
+                  <span className={cn(
+                    'px-2.5 py-1 rounded-md text-xs font-semibold border',
+                    getDifficultyBadge(currentQuestion.difficulty).className
+                  )}>
+                    {getDifficultyBadge(currentQuestion.difficulty).label}
+                  </span>
+                )}
+
+                {/* Bloom's Taxonomy Badge */}
+                {currentQuestion.bloomsTaxonomy && (
+                  <span className={cn(
+                    'px-2.5 py-1 rounded-md text-xs font-medium bg-dark-700 border border-dark-600',
+                    getBloomColor(currentQuestion.bloomsTaxonomy)
+                  )}>
+                    Bloom's: {currentQuestion.bloomsTaxonomy}
+                  </span>
+                )}
+
+                {/* Classification Reason Tooltip */}
+                {currentQuestion.classificationReason && (
+                  <div className="relative">
+                    <button
+                      className="p-1.5 rounded-md bg-dark-700 border border-dark-600 hover:bg-dark-600 transition-colors"
+                      onMouseEnter={() => setShowTooltip(true)}
+                      onMouseLeave={() => setShowTooltip(false)}
+                    >
+                      <Info size={14} className="text-dark-400" />
+                    </button>
+                    {showTooltip && (
+                      <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-10">
+                        <p className="text-xs text-dark-200 leading-relaxed">
+                          <span className="font-semibold text-dark-400">Classification:</span> {currentQuestion.classificationReason}
+                        </p>
+                        <div className="absolute bottom-0 left-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-dark-800 border-r border-b border-dark-600"></div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Answer Options */}
@@ -315,6 +504,42 @@ const QuizPlayPage = () => {
               isLoading={isSubmitting}
             >
               Submit
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── Auto-Submit Modal - Module 05 ─────────────────────────────────────────── */}
+      <Modal
+        isOpen={showAutoSubmitModal}
+        onClose={() => setShowAutoSubmitModal(false)}
+        title="Time's Up!"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+            <div className="flex items-start gap-3">
+              <Timer size={20} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-dark-300">
+                <p className="font-semibold mb-1">Auto-Submit Triggered</p>
+                <p>
+                  Your time has expired! Your quiz has been automatically submitted with your current answers.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => {
+                setShowAutoSubmitModal(false);
+                // Navigate to results after closing modal
+                navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id));
+              }}
+            >
+              View Results
             </Button>
           </div>
         </div>

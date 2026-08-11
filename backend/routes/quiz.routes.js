@@ -65,12 +65,6 @@ router.get(
   quizController.getQuizById
 );
 
-// Get all user quizzes (existing route)
-router.get('/', quizController.getAll);
-
-// Get quiz history (existing route)
-router.get('/history', quizController.getHistory);
-
 // Get all user quizzes
 router.get('/', quizController.getAll);
 
@@ -103,6 +97,20 @@ router.get(
   [param('attemptId').isMongoId().withMessage('Invalid attempt ID')],
   validate,
   quizController.review
+);
+
+// Module 05: Adaptive Quiz Engine Routes
+
+// Get recommended difficulty based on recent performance
+router.get(
+  '/adaptive/recommended-difficulty',
+  quizController.getRecommendedDifficulty
+);
+
+// Get comprehensive user performance statistics
+router.get(
+  '/adaptive/performance-stats',
+  quizController.getPerformanceStats
 );
 
 module.exports = router;
