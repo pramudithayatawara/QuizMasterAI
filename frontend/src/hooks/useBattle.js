@@ -88,6 +88,10 @@ export const useBattle = () => {
     const offStartBattle = on(
       SOCKET_EVENTS.START_BATTLE,
       (data) => {
+        const currentBattle = useBattleStore.getState();
+        if (currentBattle.status === 'active' && currentBattle.currentQuestion) {
+          return; // Ignore duplicate startBattle events
+        }
         store.setBattleStarted(data);
         startTimer(data.timePerQuestion || 30);
         navigate(ROUTES.BATTLE_PLAY.replace(':id', data.battleId));
@@ -97,6 +101,16 @@ export const useBattle = () => {
     const offNextQuestion = on(
       SOCKET_EVENTS.NEXT_QUESTION,
       (data) => {
+        const current = useBattleStore.getState();
+        // Prevent duplicate nextQuestion processing for the same index & question
+        if (
+          current.questionIndex === data.questionIndex &&
+          current.currentQuestion &&
+          (current.currentQuestion._id === data.question?._id ||
+            current.currentQuestion.question === data.question?.question)
+        ) {
+          return;
+        }
         store.setNextQuestion(data);
         resetTimer(data.timeLimit || 30);
       }
@@ -141,6 +155,25 @@ export const useBattle = () => {
       (data) => toast.error(data.message)
     );
 
+    const offBattleState = on(
+      'battleState',
+      (data) => {
+        const current = useBattleStore.getState();
+        if (data.status === 'active' && data.question) {
+          // Only adopt state if we don't currently have an active question
+          if (!current.currentQuestion) {
+            store.setBattleStarted({
+              ...data,
+              questionIndex: typeof data.currentQuestionIndex === 'number' ? data.currentQuestionIndex : 0,
+            });
+            startTimer(data.timePerQuestion || 30);
+          }
+        } else if (data.status === 'finished') {
+          store.setBattleFinished(data);
+        }
+      }
+    );
+
     return () => {
       offMatchmakingStatus();
       offMatchPlayers();
@@ -154,6 +187,7 @@ export const useBattle = () => {
       offPlayerDisconnected();
       offBattleMessage();
       offBattleError();
+      offBattleState();
     };
   }, [socket, startTimer, resetTimer, stopTimer]);
 
@@ -167,13 +201,20 @@ export const useBattle = () => {
     store.resetBattle();
   }, [emit, store]);
 
+  const rejoinBattle = useCallback((battleId) => {
+    if (!battleId) return;
+    emit(SOCKET_EVENTS.JOIN_BATTLE, { battleId });
+    emit('getBattleStatus', { battleId });
+  }, [emit]);
+
   const submitAnswer = useCallback((answer) => {
     if (store.isAnswerSubmitted) return;
 
     store.submitMyAnswer(answer);
     emit(SOCKET_EVENTS.SUBMIT_ANSWER_LIVE, {
       battleId:      store.battleId,
-      questionId:    store.currentQuestion?._id || store.currentQuestion?.id || 'q',
+      questionId:    store.currentQuestion?._id || store.currentQuestion?.id || `q-${store.questionIndex}`,
+      questionIndex: store.questionIndex,
       answer,
       timeRemaining: store.timeRemaining,
     });
@@ -192,6 +233,7 @@ export const useBattle = () => {
     // Actions
     joinMatchmaking,
     leaveMatchmaking,
+    rejoinBattle,
     submitAnswer,
     sendChatMessage,
     resetBattle: store.resetBattle,

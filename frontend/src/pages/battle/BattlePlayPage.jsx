@@ -13,6 +13,185 @@ import { formatTimer } from '../../utils/formatters.js';
 import { cn } from '../../utils/helpers.js';
 
 /**
+ * @component BattleQuestionCard
+ * @description Isolated question card with preserved snapshot so exit animations
+ * never flash the next question's text before unmounting.
+ */
+const BattleQuestionCard = ({
+  question,
+  myAnswer,
+  isAnswerSubmitted,
+  lastAnswerResult,
+  timeRemaining,
+  onSubmitAnswer,
+}) => {
+  // Capture snapshot on mount so exit transition smoothly displays this question's state
+  const [snapshot] = useState(() => ({
+    question,
+    myAnswer,
+    lastAnswerResult,
+  }));
+
+  const displayQ = snapshot.question || question;
+  const isExpired = timeRemaining <= 0;
+  const isDisabled = isAnswerSubmitted || isExpired;
+
+  return (
+    <Card padding="lg">
+      {/* Answer result feedback */}
+      <AnimatePresence>
+        {lastAnswerResult && (
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.95 }}
+            className={cn(
+              'flex items-center gap-3 p-3 rounded-xl mb-4',
+              lastAnswerResult.isCorrect
+                ? 'bg-secondary-500/10 border border-secondary-500/30'
+                : 'bg-red-500/10 border border-red-500/30'
+            )}
+          >
+            {lastAnswerResult.isCorrect ? (
+              <CheckCircle size={20} className="text-secondary-400 flex-shrink-0" />
+            ) : (
+              <XCircle size={20} className="text-red-400 flex-shrink-0" />
+            )}
+            <div>
+              <p
+                className={cn(
+                  'font-bold text-sm',
+                  lastAnswerResult.isCorrect ? 'text-secondary-400' : 'text-red-400'
+                )}
+              >
+                {lastAnswerResult.isCorrect ? 'Correct!' : 'Incorrect'}
+              </p>
+              <p className="text-xs text-dark-300">
+                {lastAnswerResult.isCorrect
+                  ? `+${lastAnswerResult.points} points earned`
+                  : 'No points this time'}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Question text */}
+      <h2 className="text-xl font-semibold text-dark-50 leading-relaxed mb-6">
+        {displayQ?.question}
+      </h2>
+
+      {/* Answer Options */}
+      <div className="space-y-3">
+        {displayQ?.type === 'mcq'
+          ? displayQ.options?.map((option, index) => {
+              const optText = typeof option === 'object' ? option.text || option.value : option;
+              const isSelected = myAnswer === optText || myAnswer === option;
+              const label = ['A', 'B', 'C', 'D'][index];
+
+              return (
+                <motion.button
+                  key={index}
+                  whileHover={!isDisabled ? { scale: 1.01 } : {}}
+                  whileTap={!isDisabled ? { scale: 0.99 } : {}}
+                  onClick={() => !isDisabled && onSubmitAnswer(optText)}
+                  disabled={isDisabled}
+                  className={cn(
+                    'quiz-option w-full',
+                    isSelected && 'selected',
+                    isDisabled && 'cursor-not-allowed opacity-75',
+                    isSelected &&
+                      lastAnswerResult &&
+                      (lastAnswerResult.isCorrect
+                        ? 'border-secondary-500/80 bg-secondary-500/15 text-secondary-300'
+                        : 'border-red-500/80 bg-red-500/15 text-red-300')
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
+                      'font-bold text-sm transition-colors',
+                      isSelected
+                        ? lastAnswerResult
+                          ? lastAnswerResult.isCorrect
+                            ? 'bg-secondary-600 text-white'
+                            : 'bg-red-600 text-white'
+                          : 'bg-primary-600 text-white'
+                        : 'bg-dark-700 text-dark-400'
+                    )}
+                  >
+                    {label}
+                  </span>
+                  <span className="flex-1 text-left text-dark-100">{optText}</span>
+                  {isSelected && isAnswerSubmitted && (
+                    <span
+                      className={cn(
+                        'ml-2 font-bold',
+                        lastAnswerResult?.isCorrect ? 'text-secondary-400' : 'text-primary-400'
+                      )}
+                    >
+                      {lastAnswerResult ? (lastAnswerResult.isCorrect ? '✓' : '✗') : '✓'}
+                    </span>
+                  )}
+                </motion.button>
+              );
+            })
+          : ['True', 'False'].map((option) => {
+              const isSelected = myAnswer === option;
+              return (
+                <motion.button
+                  key={option}
+                  whileHover={!isDisabled ? { scale: 1.01 } : {}}
+                  onClick={() => !isDisabled && onSubmitAnswer(option)}
+                  disabled={isDisabled}
+                  className={cn(
+                    'quiz-option w-full',
+                    isSelected && 'selected',
+                    isDisabled && 'cursor-not-allowed opacity-75',
+                    isSelected &&
+                      lastAnswerResult &&
+                      (lastAnswerResult.isCorrect
+                        ? 'border-secondary-500/80 bg-secondary-500/15 text-secondary-300'
+                        : 'border-red-500/80 bg-red-500/15 text-red-300')
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
+                      'font-bold text-sm transition-colors',
+                      isSelected
+                        ? lastAnswerResult
+                          ? lastAnswerResult.isCorrect
+                            ? 'bg-secondary-600 text-white'
+                            : 'bg-red-600 text-white'
+                          : 'bg-primary-600 text-white'
+                        : 'bg-dark-700 text-dark-400'
+                    )}
+                  >
+                    {option === 'True' ? '✓' : '✗'}
+                  </span>
+                  <span className="flex-1 text-left text-dark-100">{option}</span>
+                </motion.button>
+              );
+            })}
+      </div>
+
+      {/* Waiting indicator */}
+      {isAnswerSubmitted && (
+        <motion.div
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-5 p-3 rounded-xl bg-dark-800/60 border border-dark-700/60 text-center flex items-center justify-center gap-2.5 text-xs text-dark-300"
+        >
+          <Spinner size="sm" color="battle" />
+          <span>Waiting for opponent or next round...</span>
+        </motion.div>
+      )}
+    </Card>
+  );
+};
+
+/**
  * @page BattlePlayPage
  * @description Live battle arena with real-time question display and scoreboard.
  */
@@ -41,7 +220,15 @@ const BattlePlayPage = () => {
     submitAnswer,
     sendChatMessage,
     resetBattle,
+    rejoinBattle,
   } = useBattle();
+
+  // Rejoin / restore battle if loaded directly or refreshed
+  useEffect(() => {
+    if (id && !currentQuestion && !isFinished) {
+      rejoinBattle(id);
+    }
+  }, [id, currentQuestion, isFinished, rejoinBattle]);
 
   // Redirect if battle finished
   useEffect(() => {
@@ -72,8 +259,8 @@ const BattlePlayPage = () => {
                      : timeRemaining <= 10 ? 'text-orange-400'
                      : 'text-dark-100';
 
-  const myScore = scores.find((s) => s.userId === user?._id);
-  const opponentScores = scores.filter((s) => s.userId !== user?._id);
+  const myScore = scores.find((s) => s.userId?.toString() === user?._id?.toString());
+  const opponentScores = scores.filter((s) => s.userId?.toString() !== user?._id?.toString());
 
   // ─── Loading ───────────────────────────────────────────────────────────────
   if (!currentQuestion && !isFinished) {
@@ -270,129 +457,20 @@ const BattlePlayPage = () => {
         <div className="lg:col-span-2 space-y-4">
           <AnimatePresence mode="wait">
             <motion.div
-              key={questionIndex}
-              initial={{ opacity: 0, x: 30 }}
+              key={currentQuestion?._id || currentQuestion?.question || questionIndex}
+              initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
-              transition={{ duration: 0.25 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
             >
-              <Card padding="lg">
-                {/* Answer result feedback */}
-                <AnimatePresence>
-                  {lastAnswerResult && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -12, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -12, scale: 0.95 }}
-                      className={cn(
-                        'flex items-center gap-3 p-3 rounded-xl mb-4',
-                        lastAnswerResult.isCorrect
-                          ? 'bg-secondary-500/10 border border-secondary-500/30'
-                          : 'bg-red-500/10 border border-red-500/30'
-                      )}
-                    >
-                      {lastAnswerResult.isCorrect
-                        ? <CheckCircle size={20} className="text-secondary-400 flex-shrink-0" />
-                        : <XCircle    size={20} className="text-red-400 flex-shrink-0"       />
-                      }
-                      <div>
-                        <p className={cn(
-                          'font-bold text-sm',
-                          lastAnswerResult.isCorrect ? 'text-secondary-400' : 'text-red-400'
-                        )}>
-                          {lastAnswerResult.isCorrect ? 'Correct!' : 'Incorrect'}
-                        </p>
-                        <p className="text-xs text-dark-300">
-                          {lastAnswerResult.isCorrect
-                            ? `+${lastAnswerResult.points} points earned`
-                            : 'No points this time'
-                          }
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Question text */}
-                <h2 className="text-xl font-semibold text-dark-50 leading-relaxed mb-6">
-                  {currentQuestion?.question}
-                </h2>
-
-                {/* Answer Options */}
-                <div className="space-y-3">
-                  {currentQuestion?.type === 'mcq'
-                    ? currentQuestion.options.map((option, index) => {
-                        const isSelected = myAnswer === option;
-                        const label = ['A', 'B', 'C', 'D'][index];
-                        return (
-                          <motion.button
-                            key={index}
-                            whileHover={!isAnswerSubmitted ? { scale: 1.01 } : {}}
-                            whileTap={!isAnswerSubmitted ? { scale: 0.99 } : {}}
-                            onClick={() => !isAnswerSubmitted && submitAnswer(option)}
-                            disabled={isAnswerSubmitted}
-                            className={cn(
-                              'quiz-option w-full',
-                              isSelected && 'selected',
-                              isAnswerSubmitted && 'cursor-not-allowed opacity-75'
-                            )}
-                          >
-                            <span className={cn(
-                              'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
-                              'font-bold text-sm transition-colors',
-                              isSelected
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-dark-700 text-dark-400'
-                            )}>
-                              {label}
-                            </span>
-                            <span className="flex-1 text-left text-dark-100">{option}</span>
-                            {isSelected && isAnswerSubmitted && (
-                              <span className="ml-2 text-primary-400">✓</span>
-                            )}
-                          </motion.button>
-                        );
-                      })
-                    : ['True', 'False'].map((option) => {
-                        const isSelected = myAnswer === option;
-                        return (
-                          <motion.button
-                            key={option}
-                            whileHover={!isAnswerSubmitted ? { scale: 1.01 } : {}}
-                            onClick={() => !isAnswerSubmitted && submitAnswer(option)}
-                            disabled={isAnswerSubmitted}
-                            className={cn(
-                              'quiz-option w-full',
-                              isSelected && 'selected',
-                              isAnswerSubmitted && 'cursor-not-allowed opacity-75'
-                            )}
-                          >
-                            <span className={cn(
-                              'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
-                              'font-bold text-sm transition-colors',
-                              isSelected
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-dark-700 text-dark-400'
-                            )}>
-                              {option === 'True' ? '✓' : '✗'}
-                            </span>
-                            <span className="flex-1 text-left text-dark-100">{option}</span>
-                          </motion.button>
-                        );
-                      })}
-                </div>
-
-                {/* Waiting for opponent */}
-                {isAnswerSubmitted && !lastAnswerResult && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-center text-dark-400 text-sm mt-4 flex items-center justify-center gap-2"
-                  >
-                    <Spinner size="sm" /> Waiting for opponent...
-                  </motion.p>
-                )}
-              </Card>
+              <BattleQuestionCard
+                question={currentQuestion}
+                myAnswer={myAnswer}
+                isAnswerSubmitted={isAnswerSubmitted}
+                lastAnswerResult={lastAnswerResult}
+                timeRemaining={timeRemaining}
+                onSubmitAnswer={submitAnswer}
+              />
             </motion.div>
           </AnimatePresence>
 
@@ -423,10 +501,10 @@ const BattlePlayPage = () => {
                       chatMessages.map((msg, i) => (
                         <div key={i} className={cn(
                           'flex gap-2 text-xs',
-                          msg.userId === user?._id && 'flex-row-reverse'
+                          msg.userId?.toString() === user?._id?.toString() && 'flex-row-reverse'
                         )}>
                           <span className="font-semibold text-primary-400 flex-shrink-0">
-                            {msg.userId === user?._id ? 'You' : msg.userName}:
+                            {msg.userId?.toString() === user?._id?.toString() ? 'You' : msg.userName}:
                           </span>
                           <span className="text-dark-300">{msg.message}</span>
                         </div>

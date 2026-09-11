@@ -111,7 +111,7 @@ const registerBattleSocket = (io, socket) => {
   // ─── Submit Answer Live ───────────────────────────────────────────────────
   socket.on('submitAnswerLive', async (data) => {
     try {
-      const { battleId, questionId, answer, timeRemaining } = data;
+      const { battleId, questionId, answer, timeRemaining, questionIndex } = data || {};
 
       if (!battleId || !questionId || answer === undefined) {
         socket.emit('battleError', {
@@ -126,8 +126,13 @@ const registerBattleSocket = (io, socket) => {
         socket.userId,
         questionId,
         answer,
-        timeRemaining || 0
+        timeRemaining || 0,
+        questionIndex
       );
+
+      if (result.alreadyAnswered) {
+        return; // Ignore duplicate clicks on same question
+      }
 
       // Emit answer feedback to the answering player
       socket.emit('answerResult', {
@@ -152,7 +157,7 @@ const registerBattleSocket = (io, socket) => {
           },
         });
 
-        // Battle finished
+        // Battle finished (all answered on final question)
         if (result.battleFinished) {
           io.to(`battle:${battle.roomId}`).emit('battleFinished', {
             winner: result.winner,
@@ -168,16 +173,23 @@ const registerBattleSocket = (io, socket) => {
             `[Socket] Battle finished: ${battleId} | ` +
             `Winner: ${result.winner?.userName || 'Draw'}`
           );
-        } else if (result.nextQuestion) {
-          // Send next question after short delay
+        } else if (result.allAnswered && result.nextQuestion) {
+          // All active players have answered! Send next question after short delay
           setTimeout(() => {
-            io.to(`battle:${battle.roomId}`).emit('nextQuestion', {
-              question: result.nextQuestion,
-              questionIndex: result.questionIndex + 1,
-              totalQuestions: result.totalQuestions,
-              timeLimit: 30,
-            });
-          }, 2000); // 2 second delay between questions
+            try {
+              battleService.clearTransitioning(battleId);
+              io.to(`battle:${battle.roomId}`).emit('nextQuestion', {
+                question: result.nextQuestion,
+                questionIndex: result.questionIndex,
+                totalQuestions: result.totalQuestions,
+                timeLimit: 30,
+              });
+              battleService.startQuestionTimer(battleId, result.questionIndex, io);
+            } catch (err) {
+              battleService.clearTransitioning(battleId);
+              logger.error(`[Socket] Error emitting nextQuestion: ${err.message}`);
+            }
+          }, 1500); // 1.5 second delay between questions
         }
       }
     } catch (error) {
@@ -194,19 +206,30 @@ const registerBattleSocket = (io, socket) => {
   // ─── Request Battle Status ────────────────────────────────────────────────
   socket.on('getBattleStatus', async (data) => {
     try {
-      const { battleId } = data;
+      const { battleId } = data || {};
 
       const battle = await battleService.getBattleById(
         battleId,
         socket.userId
       );
 
+      const currentQ = battle.questions[battle.currentQuestionIndex];
       socket.emit('battleState', {
         battleId: battle._id,
+        roomId: battle.roomId,
         status: battle.status,
         players: battle.players,
+        scores: battle.players.map((p) => ({
+          userId: p.userId,
+          userName: p.userName,
+          totalPoints: p.totalPoints,
+          correctCount: p.correctCount,
+        })),
         currentQuestionIndex: battle.currentQuestionIndex,
+        question: battleService.sanitizeQuestion(currentQ),
+        totalQuestions: battle.questions.length,
         difficulty: battle.difficulty,
+        timePerQuestion: 30,
       });
     } catch (error) {
       socket.emit('battleError', {

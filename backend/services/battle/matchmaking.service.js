@@ -220,13 +220,12 @@ class MatchmakingService {
           difficulty,
         };
 
-        // Primary: emit to battle room (players who joined in time)
+        // Emit startBattle to battle room
         io.to(`battle:${battle.roomId}`).emit('startBattle', startPayload);
 
-        // Fallback: emit directly to each player's personal room
-        for (const player of matchedPlayers) {
-          io.to(`user:${player.userId}`).emit('startBattle', startPayload);
-        }
+        // Start server-side round timer for question 0
+        const battleService = require('./battle.service');
+        battleService.startQuestionTimer(battle._id, 0, io);
 
         logger.info(
           `[Matchmaking] Battle started: ${battle._id} | First question sent to ${matchedPlayers.length} players`
