@@ -91,10 +91,14 @@ export const useAuthStore = create(
        * @action logout
        */
       logout: async (showToast = true) => {
-        try {
-          await authAPI.logout();
-        } catch {
-          // Continue logout even if API fails
+        const hasToken = !!localStorage.getItem('accessToken') || !!get().accessToken;
+
+        if (hasToken) {
+          try {
+            await authAPI.logout();
+          } catch {
+            // Continue logout even if API fails
+          }
         }
 
         disconnectSocket();

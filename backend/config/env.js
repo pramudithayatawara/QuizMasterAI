@@ -102,8 +102,8 @@ const config = {
   // Rate Limiting
   RATE_LIMIT: {
     WINDOW: parseInt(process.env.RATE_LIMIT_WINDOW, 10) || 900000,
-    MAX: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
-    AUTH_MAX: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 5,
+    MAX: parseInt(process.env.RATE_LIMIT_MAX, 10) || 1000,
+    AUTH_MAX: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 20,
   },
 
   // Account Security

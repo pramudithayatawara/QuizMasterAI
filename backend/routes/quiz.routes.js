@@ -79,7 +79,7 @@ router.post(
   quizController.start
 );
 
-// Submit quiz
+// Submit quiz (standard bulk submit)
 router.post(
   '/attempt/:attemptId/submit',
   [
@@ -89,6 +89,19 @@ router.post(
   ],
   validate,
   quizController.submit
+);
+
+// Submit single adaptive question step (Real-Time CAT)
+router.post(
+  '/attempt/:attemptId/adaptive-step',
+  [
+    param('attemptId').isMongoId().withMessage('Invalid attempt ID'),
+    body('questionId').isMongoId().withMessage('Invalid question ID'),
+    body('answer').optional(),
+    body('timeTaken').optional().isInt({ min: 0 }),
+  ],
+  validate,
+  quizController.adaptiveStep
 );
 
 // Review quiz

@@ -9,6 +9,8 @@ const config = require('./env');
  * Prevents brute-force attacks and API abuse.
  */
 
+const isDevelopment = config.NODE_ENV === 'development';
+
 // ─── Message formatter ───────────────────────────────────────────────────────
 const createLimitMessage = (limit, windowMs) => ({
   success: false,
@@ -20,20 +22,20 @@ const createLimitMessage = (limit, windowMs) => ({
 // ─── Global rate limiter ─────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
   windowMs: config.RATE_LIMIT.WINDOW,  // 15 minutes
-  max: config.RATE_LIMIT.MAX,          // 100 requests
+  max: isDevelopment ? 100000 : config.RATE_LIMIT.MAX,
   standardHeaders: true,
   legacyHeaders: false,
-  message: createLimitMessage(config.RATE_LIMIT.MAX, config.RATE_LIMIT.WINDOW),
+  message: createLimitMessage(isDevelopment ? 100000 : config.RATE_LIMIT.MAX, config.RATE_LIMIT.WINDOW),
   skipSuccessfulRequests: false,
 });
 
 // ─── Auth rate limiter (strict) ──────────────────────────────────────────────
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: config.RATE_LIMIT.AUTH_MAX,  // 5 attempts
+  max: isDevelopment ? 200 : config.RATE_LIMIT.AUTH_MAX,
   standardHeaders: true,
   legacyHeaders: false,
-  message: createLimitMessage(config.RATE_LIMIT.AUTH_MAX, 15 * 60 * 1000),
+  message: createLimitMessage(isDevelopment ? 200 : config.RATE_LIMIT.AUTH_MAX, 15 * 60 * 1000),
   skipSuccessfulRequests: true, // Don't count successful logins
 });
 

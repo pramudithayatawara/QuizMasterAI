@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Swords, Users, Clock, Zap, Shield, Target } from 'lucide-react';
+import { Swords, Users, Clock, Zap, Shield, Target, Trophy, Wifi, WifiOff } from 'lucide-react';
 import { useBattle } from '../../hooks/useBattle.js';
 import { useSocket } from '../../hooks/useSocket.js';
 import { DIFFICULTY_CONFIG } from '../../constants/difficulty.js';
@@ -25,7 +25,7 @@ const BattleLobbyPage = () => {
     leaveMatchmaking,
   } = useBattle();
 
-  const { socket, isAvailable } = useSocket();
+  const { socket, isAvailable, isConnected } = useSocket();
   const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
   const [waitTime, setWaitTime] = useState(0);
 
@@ -58,36 +58,13 @@ const BattleLobbyPage = () => {
       <div className="min-h-[80vh] flex items-center justify-center">
         <Card className="max-w-md mx-auto text-center py-12">
           <div className="w-16 h-16 mx-auto mb-4 bg-orange-500/20 rounded-full flex items-center justify-center">
-            <Target size={32} className="text-orange-400" />
+            <WifiOff size={32} className="text-orange-400" />
           </div>
           <h2 className="text-2xl font-bold text-dark-50 mb-2">
             Battle Mode Unavailable
           </h2>
           <p className="text-dark-400 mb-6">
-            Real-time battle mode requires Socket.IO connection. 
-            The server may not have Socket.IO configured.
-          </p>
-          <Button variant="secondary" onClick={() => window.location.reload()}>
-            Retry Connection
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
-  // ─── Socket Not Available Warning ─────────────────────────────────────────
-  if (!isAvailable) {
-    return (
-      <div className="min-h-[80vh] flex items-center justify-center">
-        <Card className="max-w-md mx-auto text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 bg-orange-500/20 rounded-full flex items-center justify-center">
-            <Target size={32} className="text-orange-400" />
-          </div>
-          <h2 className="text-2xl font-bold text-dark-50 mb-2">
-            Battle Mode Unavailable
-          </h2>
-          <p className="text-dark-400 mb-6">
-            Real-time battle mode requires Socket.IO connection. 
+            Real-time battle mode requires Socket.IO connection.
             The server may not have Socket.IO configured.
           </p>
           <Button variant="secondary" onClick={() => window.location.reload()}>
@@ -108,22 +85,27 @@ const BattleLobbyPage = () => {
           className="text-center space-y-6 max-w-md mx-auto"
         >
           <motion.div
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ repeat: Infinity, duration: 1.5 }}
-            className="text-6xl"
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ repeat: Infinity, duration: 1.2 }}
+            className="text-7xl"
           >
             ⚔️
           </motion.div>
-          <h2 className="text-3xl font-bold gradient-text-battle">
+          <h2 className="text-4xl font-bold gradient-text-battle">
             Match Found!
           </h2>
-          <p className="text-dark-400">Connecting players...</p>
-          <div className="flex items-center justify-center gap-4">
-            {players.map((player) => (
-              <div key={player.userId} className="flex flex-col items-center gap-2">
-                <Avatar name={player.userName} size="lg" ring />
-                <span className="text-sm text-dark-300">{player.userName}</span>
-              </div>
+          <p className="text-dark-400">Connecting players to battle arena...</p>
+          <div className="flex items-center justify-center gap-6 my-4">
+            {players.map((player, i) => (
+              <React.Fragment key={player.userId}>
+                <div className="flex flex-col items-center gap-2">
+                  <Avatar name={player.userName} size="lg" ring />
+                  <span className="text-sm font-semibold text-dark-200">{player.userName}</span>
+                </div>
+                {i < players.length - 1 && (
+                  <span className="text-3xl text-battle-400 font-black">VS</span>
+                )}
+              </React.Fragment>
             ))}
           </div>
           <Spinner size="lg" color="battle" />
@@ -131,6 +113,37 @@ const BattleLobbyPage = () => {
       </div>
     );
   }
+
+  const battleRules = [
+    {
+      icon:  Users,
+      label: '2 Players',
+      desc:  'Head-to-head competition',
+      color: 'text-primary-400',
+      bg:    'bg-primary-500/10',
+    },
+    {
+      icon:  Clock,
+      label: '30 Seconds',
+      desc:  'Per question timer',
+      color: 'text-accent-400',
+      bg:    'bg-accent-500/10',
+    },
+    {
+      icon:  Zap,
+      label: 'Speed Bonus',
+      desc:  'Faster = more points',
+      color: 'text-secondary-400',
+      bg:    'bg-secondary-500/10',
+    },
+    {
+      icon:  Trophy,
+      label: '10 Questions',
+      desc:  'Highest score wins',
+      color: 'text-battle-400',
+      bg:    'bg-battle-500/10',
+    },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -141,17 +154,53 @@ const BattleLobbyPage = () => {
         className="text-center space-y-3"
       >
         <div className="flex items-center justify-center gap-3 mb-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-battle-600 to-accent-600
-                          flex items-center justify-center shadow-glow-purple">
-            <Swords size={32} className="text-white" />
-          </div>
+          <motion.div
+            animate={{ rotate: [0, 5, -5, 0] }}
+            transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+            className="w-20 h-20 rounded-2xl bg-gradient-to-br from-battle-600 to-accent-600
+                        flex items-center justify-center shadow-glow-purple"
+          >
+            <Swords size={38} className="text-white" />
+          </motion.div>
         </div>
-        <h1 className="text-4xl font-bold gradient-text-battle">Battle Mode</h1>
-        <p className="text-dark-400 max-w-md mx-auto">
+        <h1 className="text-5xl font-bold gradient-text-battle">Battle Mode</h1>
+        <p className="text-dark-400 max-w-md mx-auto text-lg">
           Compete against other players in real-time quiz battles.
-          Answer questions faster to earn bonus points!
+          Answer faster to earn speed bonus points!
         </p>
+
+        {/* Connection status */}
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+          <span className="text-xs text-dark-500">
+            {isConnected ? 'Connected to server' : 'Reconnecting...'}
+          </span>
+        </div>
       </motion.div>
+
+      {/* Battle Rules */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {battleRules.map((rule, i) => {
+          const Icon = rule.icon;
+          return (
+            <motion.div
+              key={rule.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08 }}
+            >
+              <Card padding="sm" className="text-center">
+                <div className={`w-10 h-10 ${rule.bg} rounded-xl mx-auto
+                                flex items-center justify-center mb-3`}>
+                  <Icon size={20} className={rule.color} />
+                </div>
+                <p className="font-semibold text-dark-100 text-sm">{rule.label}</p>
+                <p className="text-xs text-dark-400 mt-1">{rule.desc}</p>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </div>
 
       {/* Matchmaking State */}
       <AnimatePresence mode="wait">
@@ -163,10 +212,10 @@ const BattleLobbyPage = () => {
             animate={{ opacity: 1, scale: 1   }}
             exit={{   opacity: 0, scale: 0.95 }}
           >
-            <Card className="text-center py-12 battle-glow border-battle-500/30">
+            <Card className="text-center py-10 battle-glow border-battle-500/30">
               <motion.div
                 animate={{ rotate: 360 }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
                 className="text-5xl mb-6 inline-block"
               >
                 ⚔️
@@ -176,7 +225,8 @@ const BattleLobbyPage = () => {
                 Searching for Opponent...
               </h2>
               <p className="text-dark-400 mb-6">
-                Difficulty: <span className="text-accent-400 font-semibold capitalize">
+                Difficulty:{' '}
+                <span className="text-accent-400 font-semibold capitalize">
                   {selectedDifficulty}
                 </span>
               </p>
@@ -184,37 +234,33 @@ const BattleLobbyPage = () => {
               {/* Stats */}
               <div className="flex items-center justify-center gap-8 mb-8">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-battle-400">
+                  <p className="text-2xl font-mono font-bold text-battle-400">
                     {formatWaitTime(waitTime)}
                   </p>
-                  <p className="text-xs text-dark-500">Wait Time</p>
+                  <p className="text-xs text-dark-500 mt-1">Wait Time</p>
                 </div>
+                <div className="w-px h-10 bg-dark-700" />
                 <div className="text-center">
                   <p className="text-2xl font-bold text-primary-400">
-                    #{queuePosition}
+                    {queueSize || '?'}
                   </p>
-                  <p className="text-xs text-dark-500">Queue Position</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-secondary-400">
-                    {queueSize}
-                  </p>
-                  <p className="text-xs text-dark-500">In Queue</p>
+                  <p className="text-xs text-dark-500 mt-1">In Queue</p>
                 </div>
               </div>
 
-              {/* Progress bar to timeout */}
+              {/* Progress to timeout */}
               <div className="max-w-xs mx-auto mb-6">
-                <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
+                <div className="flex justify-between text-xs text-dark-500 mb-1.5">
+                  <span>Searching</span>
+                  <span>Auto-cancel in {Math.max(60 - waitTime, 0)}s</span>
+                </div>
+                <div className="h-2 bg-dark-700 rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-gradient-to-r from-battle-500 to-accent-500 rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(waitTime / 60) * 100}%` }}
+                    animate={{ width: `${Math.min((waitTime / 60) * 100, 100)}%` }}
+                    transition={{ duration: 0.5 }}
                   />
                 </div>
-                <p className="text-xs text-dark-500 mt-1">
-                  Auto-cancel in {Math.max(60 - waitTime, 0)}s
-                </p>
               </div>
 
               <Button
@@ -245,71 +291,47 @@ const BattleLobbyPage = () => {
                   <button
                     key={key}
                     onClick={() => setSelectedDifficulty(key)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all duration-200
+                    className={`p-5 rounded-xl border-2 text-left transition-all duration-200
                       ${selectedDifficulty === key
-                        ? `${config.bgColor} ${config.border} ${config.color}`
-                        : 'border-dark-600 bg-dark-800/50 text-dark-400 hover:border-dark-500'
+                        ? `${config.bgColor} ${config.border} ${config.color} shadow-lg`
+                        : 'border-dark-600 bg-dark-800/50 text-dark-400 hover:border-dark-500 hover:bg-dark-800'
                       }`}
                   >
-                    <div className="text-2xl mb-2">{config.icon}</div>
-                    <p className="font-semibold capitalize">{config.label}</p>
+                    <div className="text-3xl mb-3">{config.icon}</div>
+                    <p className="font-bold capitalize text-lg">{config.label}</p>
                     <p className="text-xs mt-1 opacity-70">
-                      {config.timeLimit} min per round
+                      General knowledge & trivia
                     </p>
+                    {selectedDifficulty === key && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="mt-2 text-xs font-semibold"
+                      >
+                        ✓ Selected
+                      </motion.div>
+                    )}
                   </button>
                 ))}
               </div>
             </Card>
 
-            {/* Battle Rules */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {[
-                {
-                  icon:  Users,
-                  label: '2-4 Players',
-                  desc:  'Per battle room',
-                  color: 'text-primary-400',
-                  bg:    'bg-primary-500/10',
-                },
-                {
-                  icon:  Clock,
-                  label: '30 Seconds',
-                  desc:  'Per question',
-                  color: 'text-accent-400',
-                  bg:    'bg-accent-500/10',
-                },
-                {
-                  icon:  Zap,
-                  label: 'Speed Bonus',
-                  desc:  'Answer faster for more points',
-                  color: 'text-secondary-400',
-                  bg:    'bg-secondary-500/10',
-                },
-              ].map((rule) => {
-                const Icon = rule.icon;
-                return (
-                  <Card key={rule.label} padding="sm">
-                    <div className={`w-10 h-10 ${rule.bg} rounded-xl
-                                    flex items-center justify-center mb-3`}>
-                      <Icon size={20} className={rule.color} />
-                    </div>
-                    <p className="font-semibold text-dark-100">{rule.label}</p>
-                    <p className="text-xs text-dark-400 mt-1">{rule.desc}</p>
-                  </Card>
-                );
-              })}
-            </div>
-
             {/* Join Battle Button */}
-            <Button
-              variant="battle"
-              size="xl"
-              className="w-full"
-              onClick={handleJoinQueue}
-              leftIcon={<Swords size={22} />}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              Find Battle
-            </Button>
+              <Button
+                variant="battle"
+                size="xl"
+                className="w-full py-5 text-xl"
+                onClick={handleJoinQueue}
+                disabled={!isConnected}
+                leftIcon={<Swords size={24} />}
+              >
+                {isConnected ? 'Find Battle' : 'Connecting...'}
+              </Button>
+            </motion.div>
 
             {matchmakingStatus === 'timeout' && (
               <motion.p

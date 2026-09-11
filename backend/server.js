@@ -5,6 +5,7 @@ const http = require('http');
 const app = require('./routes/app');
 const connectDB = require('./config/db');
 const config = require('./config/env');
+const { initializeSocket } = require('./sockets/index');
 
 // ─── Unhandled rejection handler ─────────────────────────────────────────────────
 process.on('unhandledRejection', (err) => {
@@ -23,6 +24,10 @@ process.on('uncaughtException', (err) => {
 // ─── Create HTTP server ──────────────────────────────────────────────────────────
 const server = http.createServer(app);
 
+// ─── Initialize Socket.IO ────────────────────────────────────────────────────────
+// Must be done BEFORE server.listen so that Socket.IO attaches to the HTTP server
+initializeSocket(server);
+
 // ─── Application startup ──────────────────────────────────────────────────────────
 const startServer = async () => {
   try {
@@ -37,6 +42,7 @@ const startServer = async () => {
       console.log(`🌍 Environment: ${config.NODE_ENV}`);
       console.log(`🔗 API URL    : http://localhost:${config.PORT}/api/${config.API_VERSION}`);
       console.log(`❤️  Health     : http://localhost:${config.PORT}/api/${config.API_VERSION}/health`);
+      console.log(`⚡ Socket.IO  : ws://localhost:${config.PORT}`);
       console.log('═══════════════════════════════════════════');
     });
 
@@ -49,4 +55,4 @@ const startServer = async () => {
 
 startServer();
 
-module.exports = server;
+module.exports = server;

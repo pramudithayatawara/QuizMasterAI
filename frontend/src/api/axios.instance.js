@@ -59,13 +59,19 @@ axiosInstance.interceptors.response.use(
 
   async (error) => {
     const originalRequest = error.config;
+    const requestUrl = originalRequest?.url || '';
+
+    if (!localStorage.getItem('accessToken') && !requestUrl.includes('/api/v1/auth/login')) {
+      return Promise.reject(error);
+    }
 
     // Handle 401 - Token expired
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !originalRequest.url.includes('/api/v1/auth/refresh-token') &&
-      !originalRequest.url.includes('/api/v1/auth/login')
+      !requestUrl.includes('/api/v1/auth/refresh-token') &&
+      !requestUrl.includes('/api/v1/auth/login') &&
+      !requestUrl.includes('/api/v1/auth/logout')
     ) {
       if (isRefreshing) {
         // Queue this request while refresh is in progress

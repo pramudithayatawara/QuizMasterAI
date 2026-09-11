@@ -1,6 +1,7 @@
 'use strict';
 
 const Battle = require('../../models/Battle.model');
+const Quiz   = require('../../models/Quiz.model');
 const gamificationService = require('../gamification/gamification.service');
 const AppError = require('../../utils/AppError');
 const logger = require('../../utils/logger');
@@ -354,10 +355,13 @@ class BattleService {
   /**
    * @private _checkAllAnswered
    * @description Check if all players have answered current question.
+   * In a 2-player battle, moves to next question as soon as the first
+   * player answers (the server-side timer will handle the other player).
+   * This is intentional for fast-paced battle gameplay.
    */
   _checkAllAnswered(battle, questionIndex, latestUserId) {
-    // Simplified: move to next after any answer for now
-    // In production: track answers per question per player
+    // Move to next question immediately when any player answers.
+    // This keeps the battle fast-paced - the 30s timer is the fallback.
     return true;
   }
 

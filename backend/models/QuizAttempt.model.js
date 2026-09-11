@@ -160,6 +160,64 @@ const quizAttemptSchema = new mongoose.Schema(
       default: 'maintained',
     },
 
+    // ─── Question-by-Question Real-Time Adaptive CAT Fields ──────
+    isAdaptive: {
+      type: Boolean,
+      default: false,
+    },
+
+    currentAbilityTheta: {
+      type: Number,
+      default: 0.0, // IRT ability scale (-3.0 to +3.0)
+    },
+
+    currentDifficultyLevel: {
+      type: String,
+      enum: Object.values(DIFFICULTY),
+      default: DIFFICULTY.MEDIUM,
+    },
+
+    consecutiveCorrect: {
+      type: Number,
+      default: 0,
+    },
+
+    consecutiveIncorrect: {
+      type: Number,
+      default: 0,
+    },
+
+    servedQuestionIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      default: [],
+    },
+
+    adaptiveTrajectory: {
+      type: [
+        {
+          stepNumber: Number,
+          questionId: mongoose.Schema.Types.ObjectId,
+          questionText: String,
+          difficulty: String,
+          bloomsTaxonomy: String,
+          selectedAnswer: String,
+          correctAnswer: String,
+          isCorrect: Boolean,
+          explanation: String,
+          timeTaken: Number,
+          abilityThetaAfter: Number,
+          calibratedDifficulty: String,
+          adjustment: String,
+          calibrationReason: String,
+          answeredAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+      ],
+      default: [],
+    },
+
     // ─── Analysis ───────────────────────────────────────────────
     weakTopics: {
       type: [String],

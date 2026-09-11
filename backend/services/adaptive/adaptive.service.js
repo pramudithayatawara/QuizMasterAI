@@ -428,6 +428,142 @@ class AdaptiveService {
       throw error;
     }
   }
+
+  /**
+   * @method selectInitialAdaptiveQuestion
+   * @description Select initial calibration question for an adaptive quiz (Medium tier).
+   * @param {Array} availableQuestions - Questions in quiz
+   * @returns {Object|null} Initial question
+   */
+  static selectInitialAdaptiveQuestion(availableQuestions = []) {
+    if (!availableQuestions || availableQuestions.length === 0) return null;
+
+    // Prefer Medium difficulty calibration question
+    const mediumQuestion = availableQuestions.find(
+      (q) => q.difficulty === DIFFICULTY.MEDIUM
+    );
+    if (mediumQuestion) return mediumQuestion;
+
+    // Fallback to first question
+    return availableQuestions[0];
+  }
+
+  /**
+   * @method calibrateNextStep
+   * @description Question-by-Question Real-Time Computerized Adaptive Testing (CAT).
+   * Calibrates student ability theta after each question, updates streaks, determines
+   * the newly calibrated target difficulty, and selects the next optimal question.
+   *
+   * @param {Object} attempt - Current QuizAttempt document
+   * @param {Object} currentQuestion - Question that was just answered
+   * @param {Boolean} isCorrect - Whether answer was correct
+   * @param {Number} timeTaken - Seconds spent on this question
+   * @param {Array} availableQuestions - All questions in the quiz
+   * @returns {Object} Next question and calibration metadata
+   */
+  static calibrateNextStep(attempt, currentQuestion, isCorrect, timeTaken, availableQuestions = []) {
+    const DIFFICULTY_B_PARAMS = {
+      [DIFFICULTY.EASY]: -1.0,
+      [DIFFICULTY.MEDIUM]: 0.0,
+      [DIFFICULTY.HARD]: 1.0,
+    };
+
+    const currentTheta = attempt.currentAbilityTheta !== undefined ? attempt.currentAbilityTheta : 0.0;
+    const questionDifficulty = currentQuestion.difficulty || DIFFICULTY.MEDIUM;
+    const b = DIFFICULTY_B_PARAMS[questionDifficulty] !== undefined ? DIFFICULTY_B_PARAMS[questionDifficulty] : 0.0;
+
+    // IRT Rasch Model: P(theta) = 1 / (1 + e^-(theta - b))
+    const pSuccess = 1 / (1 + Math.exp(-(currentTheta - b)));
+    const outcome = isCorrect ? 1.0 : 0.0;
+
+    // Response time factor: average expected time is 30s
+    let speedMultiplier = 1.0;
+    if (isCorrect && timeTaken > 0 && timeTaken < 20) {
+      speedMultiplier = 1.2; // fast and accurate
+    } else if (!isCorrect && timeTaken > 60) {
+      speedMultiplier = 1.1; // struggled and missed
+    }
+
+    // Ability update: delta = K * (outcome - P)
+    const K = 0.5 * speedMultiplier;
+    let newTheta = currentTheta + K * (outcome - pSuccess);
+    newTheta = Math.max(-3.0, Math.min(3.0, Number(newTheta.toFixed(3))));
+
+    // Update consecutive streaks
+    const consecutiveCorrect = isCorrect ? (attempt.consecutiveCorrect || 0) + 1 : 0;
+    const consecutiveIncorrect = !isCorrect ? (attempt.consecutiveIncorrect || 0) + 1 : 0;
+
+    // Determine newly calibrated difficulty level
+    const currentLevel = attempt.currentDifficultyLevel || DIFFICULTY.MEDIUM;
+    let calibratedLevel = currentLevel;
+    let adjustment = 'maintained';
+    let calibrationReason = 'Performance within expected range. Maintained difficulty.';
+
+    if (isCorrect) {
+      if (consecutiveCorrect >= 2 || newTheta >= 0.75) {
+        if (currentLevel === DIFFICULTY.EASY) {
+          calibratedLevel = DIFFICULTY.MEDIUM;
+          adjustment = 'increased';
+          calibrationReason = 'Consistent correct answers! Difficulty upgraded to Medium.';
+        } else if (currentLevel === DIFFICULTY.MEDIUM && (consecutiveCorrect >= 2 || newTheta >= 0.85)) {
+          calibratedLevel = DIFFICULTY.HARD;
+          adjustment = 'increased';
+          calibrationReason = 'Excellent mastery demonstrated! Difficulty upgraded to Hard 🔥.';
+        }
+      }
+    } else {
+      if (consecutiveIncorrect >= 2 || newTheta <= -0.75) {
+        if (currentLevel === DIFFICULTY.HARD) {
+          calibratedLevel = DIFFICULTY.MEDIUM;
+          adjustment = 'decreased';
+          calibrationReason = 'Adjusting challenge to help reinforce concepts. Calibrated to Medium.';
+        } else if (currentLevel === DIFFICULTY.MEDIUM && (consecutiveIncorrect >= 2 || newTheta <= -0.85)) {
+          calibratedLevel = DIFFICULTY.EASY;
+          adjustment = 'decreased';
+          calibrationReason = 'Providing foundational questions to rebuild momentum. Calibrated to Easy.';
+        }
+      }
+    }
+
+    // Find next unserved question from the pool
+    const servedSet = new Set((attempt.servedQuestionIds || []).map((id) => id.toString()));
+    if (currentQuestion._id) {
+      servedSet.add(currentQuestion._id.toString());
+    }
+
+    const unserved = availableQuestions.filter(
+      (q) => !servedSet.has(q._id.toString())
+    );
+
+    let nextQuestion = null;
+    if (unserved.length > 0) {
+      // 1. Try exact difficulty match
+      const exactMatches = unserved.filter((q) => q.difficulty === calibratedLevel);
+      if (exactMatches.length > 0) {
+        nextQuestion = exactMatches[0];
+      } else {
+        // 2. Fallback to closest available difficulty
+        if (calibratedLevel === DIFFICULTY.HARD) {
+          nextQuestion = unserved.find((q) => q.difficulty === DIFFICULTY.MEDIUM) || unserved[0];
+        } else if (calibratedLevel === DIFFICULTY.EASY) {
+          nextQuestion = unserved.find((q) => q.difficulty === DIFFICULTY.MEDIUM) || unserved[0];
+        } else {
+          nextQuestion = unserved[0];
+        }
+      }
+    }
+
+    return {
+      newTheta,
+      calibratedLevel,
+      consecutiveCorrect,
+      consecutiveIncorrect,
+      adjustment,
+      calibrationReason,
+      nextQuestion,
+      hasMoreQuestions: nextQuestion !== null,
+    };
+  }
 }
 
 module.exports = AdaptiveService;

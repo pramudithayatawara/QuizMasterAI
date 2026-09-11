@@ -63,13 +63,14 @@ class QuizController {
 
   /**
    * @route   POST /api/v1/quizzes/:id/start
-   * @desc    Start quiz attempt
+   * @desc    Start quiz attempt (supports standard and real-time adaptive)
    * @access  Private
    */
   start = asyncHandler(async (req, res) => {
     const result = await quizService.startQuiz(
       req.params.id,
-      req.user._id
+      req.user._id,
+      req.body || {}
     );
 
     return ApiResponse.success(
@@ -77,6 +78,37 @@ class QuizController {
       200,
       'Quiz started! Good luck!',
       result
+    );
+  });
+
+  /**
+   * @route   POST /api/v1/quizzes/attempt/:attemptId/adaptive-step
+   * @desc    Submit single question answer and calibrate next question in real time (CAT)
+   * @access  Private
+   */
+  adaptiveStep = asyncHandler(async (req, res) => {
+    const { questionId, answer, timeTaken } = req.body;
+    const { attemptId } = req.params;
+
+    if (!questionId) {
+      throw new AppError('Question ID is required.', 400);
+    }
+
+    const stepResult = await quizService.processAdaptiveStep(
+      attemptId,
+      req.user._id,
+      {
+        questionId,
+        answer,
+        timeTaken: timeTaken || 0,
+      }
+    );
+
+    return ApiResponse.success(
+      res,
+      200,
+      stepResult.finished ? 'Adaptive quiz completed!' : 'Adaptive step evaluated.',
+      stepResult
     );
   });
 
@@ -147,7 +179,7 @@ class QuizController {
       res,
       200,
       'Quiz review retrieved.',
-      { review }
+      { review, result: review }
     );
   });
 

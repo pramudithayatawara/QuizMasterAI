@@ -6,12 +6,14 @@ import { io } from 'socket.io-client';
  */
 
 // In development, use the proxy URL; in production, use the direct URL
-const SOCKET_URL = import.meta.env.MODE === 'development' 
-  ? window.location.origin 
+const SOCKET_URL = import.meta.env.MODE === 'development'
+  ? window.location.origin
   : (import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
 
-let socketInstance = null;
-let socketEnabled = true; // Flag to disable socket if backend doesn't support it
+let socketInstance  = null;
+let socketEnabled   = true;  // Can be reset to true on manual retry
+let failureCount    = 0;
+const MAX_FAILURES  = 5;     // Only permanently disable after 5 consecutive failures
 
 /**
  * @function getSocket
@@ -21,7 +23,6 @@ let socketEnabled = true; // Flag to disable socket if backend doesn't support i
  */
 export const getSocket = (token) => {
   if (!socketEnabled) {
-    console.log('[Socket] Socket.IO is disabled');
     return null;
   }
 
@@ -29,31 +30,50 @@ export const getSocket = (token) => {
     return socketInstance;
   }
 
+  // If socket exists but disconnected, try to reconnect first
+  if (socketInstance && !socketInstance.connected) {
+    socketInstance.connect();
+    return socketInstance;
+  }
+
   try {
     socketInstance = io(SOCKET_URL, {
-      auth: { token },
-      transports:      ['websocket', 'polling'],
-      timeout:          10000,
-      reconnection:     true,
-      reconnectionAttempts: 5,
+      auth:                { token },
+      transports:          ['websocket', 'polling'],
+      timeout:              10000,
+      reconnection:         true,
+      reconnectionAttempts: 10,
       reconnectionDelay:    1000,
       reconnectionDelayMax: 5000,
     });
 
     // Handle connection errors gracefully
     socketInstance.on('connect_error', (error) => {
-      console.warn('[Socket] Connection failed, disabling Socket.IO:', error.message);
-      socketEnabled = false;
-      if (socketInstance) {
-        socketInstance.disconnect();
-        socketInstance = null;
+      failureCount++;
+      console.warn(
+        `[Socket] Connection error (attempt ${failureCount}): ${error.message}`
+      );
+
+      // Only permanently disable after too many failures
+      if (failureCount >= MAX_FAILURES) {
+        console.warn('[Socket] Too many failures — disabling Socket.IO.');
+        socketEnabled = false;
       }
+    });
+
+    // Reset failure count on successful connect
+    socketInstance.on('connect', () => {
+      failureCount = 0;
+      console.log('[Socket] Connected successfully:', socketInstance.id);
     });
 
     return socketInstance;
   } catch (error) {
     console.warn('[Socket] Failed to create socket instance:', error.message);
-    socketEnabled = false;
+    failureCount++;
+    if (failureCount >= MAX_FAILURES) {
+      socketEnabled = false;
+    }
     return null;
   }
 };
@@ -88,6 +108,19 @@ export const getSocketInstance = () => socketInstance;
 export const isSocketEnabled = () => socketEnabled;
 
 /**
+ * @function resetSocket
+ * @description Re-enable socket and clear failure count (for manual retry).
+ */
+export const resetSocket = () => {
+  socketEnabled = true;
+  failureCount  = 0;
+  if (socketInstance) {
+    socketInstance.disconnect();
+    socketInstance = null;
+  }
+};
+
+/**
  * @function setSocketEnabled
  * @description Enable or disable Socket.IO.
  * @param {boolean} enabled - Whether to enable Socket.IO
@@ -99,4 +132,11 @@ export const setSocketEnabled = (enabled) => {
   }
 };
 
-export default { getSocket, disconnectSocket, getSocketInstance, isSocketEnabled, setSocketEnabled };
+export default {
+  getSocket,
+  disconnectSocket,
+  getSocketInstance,
+  isSocketEnabled,
+  resetSocket,
+  setSocketEnabled,
+};

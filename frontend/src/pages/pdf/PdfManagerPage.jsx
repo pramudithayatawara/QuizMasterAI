@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Upload, Trash2, Eye, Clock, CheckCircle, 
@@ -17,6 +18,7 @@ import toast from 'react-hot-toast';
 const PdfManagerPage = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const navigate = useNavigate();
   const [pdfs, setPdfs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -66,11 +68,9 @@ const PdfManagerPage = () => {
       toast.loading('Generating quiz... This may take 10-15 seconds.');
       const response = await quizAPI.generateQuiz({ pdfId, questionCount: 10 });
       toast.dismiss();
-      toast.success('Quiz generated successfully!');
-      
-      // Navigate to quiz page or show success
-      // For now, just refresh the PDF list
-      fetchPdfs();
+      toast.success('Quiz generated! Redirecting...');
+      // Navigate to quiz list so user can see and play the new quiz
+      navigate('/quizzes');
     } catch (error) {
       toast.dismiss();
       toast.error(error.response?.data?.message || 'Failed to generate quiz');
@@ -277,6 +277,7 @@ const PdfManagerPage = () => {
                     </button>
                   )}
                   <button
+                    onClick={() => navigate(`/pdfs/${pdf._id}`)}
                     className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg ${isDark ? 'bg-slate-700/50 hover:bg-slate-700 text-slate-300' : 'bg-light-200 hover:bg-light-300 text-light-700'} text-sm transition-colors`}
                     title="View details"
                   >

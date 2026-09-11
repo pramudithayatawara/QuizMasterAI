@@ -25,13 +25,17 @@ export const quizAPI = {
   getHistory: (params) =>
     axiosInstance.get('/api/v1/quizzes/history', { params }),
 
-  // Start quiz attempt
-  start: (id) =>
-    axiosInstance.post(`/api/v1/quizzes/${id}/start`),
+  // Start quiz attempt (supports options like { isAdaptive: true })
+  start: (id, options = {}) =>
+    axiosInstance.post(`/api/v1/quizzes/${id}/start`, options),
 
-  // Submit quiz answers
+  // Submit quiz answers (bulk submit)
   submit: (attemptId, data) =>
     axiosInstance.post(`/api/v1/quizzes/attempt/${attemptId}/submit`, data),
+
+  // Submit single adaptive question step (Real-time CAT)
+  submitAdaptiveStep: (attemptId, data) =>
+    axiosInstance.post(`/api/v1/quizzes/attempt/${attemptId}/adaptive-step`, data),
 
   // Get quiz review with answers
   review: (attemptId) =>

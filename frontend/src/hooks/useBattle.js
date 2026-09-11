@@ -16,6 +16,33 @@ export const useBattle = () => {
   const navigate = useNavigate();
   const timerRef = useRef(null);
 
+  // ─── Timer Management ───────────────────────────────────────────────────────
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const startTimer = useCallback((seconds) => {
+    stopTimer();
+    useBattleStore.setState({ timeRemaining: seconds });
+
+    timerRef.current = setInterval(() => {
+      // Use functional setState to avoid stale closure
+      useBattleStore.setState((state) => ({
+        timeRemaining: Math.max(state.timeRemaining - 1, 0),
+      }));
+    }, 1000);
+  }, [stopTimer]);
+
+  const resetTimer = useCallback((seconds) => {
+    startTimer(seconds);
+  }, [startTimer]);
+
+  // Cleanup timer on unmount
+  useEffect(() => () => stopTimer(), [stopTimer]);
+
   // ─── Socket Event Listeners ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
@@ -30,8 +57,8 @@ export const useBattle = () => {
       SOCKET_EVENTS.MATCH_PLAYERS,
       (data) => {
         store.setMatchFound(data);
-        toast.success('Match found! Joining battle...');
-        // Join the battle room
+        toast.success('⚔️ Match found! Joining battle...', { duration: 3000 });
+        // Join the battle room immediately so we receive startBattle
         emit(SOCKET_EVENTS.JOIN_BATTLE, { battleId: data.battleId });
       }
     );
@@ -40,7 +67,20 @@ export const useBattle = () => {
       SOCKET_EVENTS.MATCHMAKING_TIMEOUT,
       (data) => {
         store.setQueueStatus({ status: 'timeout' });
-        toast.error(data.message || 'Matchmaking timed out.');
+        toast.error(data.message || 'Matchmaking timed out. Please try again.');
+      }
+    );
+
+    // Joined battle room confirmation
+    const offJoinedBattle = on(
+      SOCKET_EVENTS.JOINED_BATTLE,
+      (data) => {
+        if (data.success) {
+          useBattleStore.setState((s) => ({
+            battleId: data.battleId || s.battleId,
+            roomId:   data.roomId   || s.roomId,
+          }));
+        }
       }
     );
 
@@ -49,7 +89,7 @@ export const useBattle = () => {
       SOCKET_EVENTS.START_BATTLE,
       (data) => {
         store.setBattleStarted(data);
-        startTimer(data.timePerQuestion);
+        startTimer(data.timePerQuestion || 30);
         navigate(ROUTES.BATTLE_PLAY.replace(':id', data.battleId));
       }
     );
@@ -58,7 +98,7 @@ export const useBattle = () => {
       SOCKET_EVENTS.NEXT_QUESTION,
       (data) => {
         store.setNextQuestion(data);
-        resetTimer(data.timeLimit);
+        resetTimer(data.timeLimit || 30);
       }
     );
 
@@ -105,6 +145,7 @@ export const useBattle = () => {
       offMatchmakingStatus();
       offMatchPlayers();
       offMatchmakingTimeout();
+      offJoinedBattle();
       offStartBattle();
       offNextQuestion();
       offAnswerResult();
@@ -114,30 +155,7 @@ export const useBattle = () => {
       offBattleMessage();
       offBattleError();
     };
-  }, [socket]);
-
-  // ─── Timer Management ───────────────────────────────────────────────────────
-  const startTimer = useCallback((seconds) => {
-    store.updateTimer(seconds);
-    timerRef.current = setInterval(() => {
-      store.updateTimer(Math.max(store.timeRemaining - 1, 0));
-    }, 1000);
-  }, []);
-
-  const resetTimer = useCallback((seconds) => {
-    stopTimer();
-    startTimer(seconds);
-  }, [startTimer]);
-
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  // Cleanup timer on unmount
-  useEffect(() => () => stopTimer(), [stopTimer]);
+  }, [socket, startTimer, resetTimer, stopTimer]);
 
   // ─── Actions ────────────────────────────────────────────────────────────────
   const joinMatchmaking = useCallback((difficulty) => {
@@ -147,7 +165,7 @@ export const useBattle = () => {
   const leaveMatchmaking = useCallback(() => {
     emit(SOCKET_EVENTS.LEAVE_ROOM);
     store.resetBattle();
-  }, [emit]);
+  }, [emit, store]);
 
   const submitAnswer = useCallback((answer) => {
     if (store.isAnswerSubmitted) return;
@@ -155,7 +173,7 @@ export const useBattle = () => {
     store.submitMyAnswer(answer);
     emit(SOCKET_EVENTS.SUBMIT_ANSWER_LIVE, {
       battleId:      store.battleId,
-      questionId:    store.currentQuestion?._id,
+      questionId:    store.currentQuestion?._id || store.currentQuestion?.id || 'q',
       answer,
       timeRemaining: store.timeRemaining,
     });

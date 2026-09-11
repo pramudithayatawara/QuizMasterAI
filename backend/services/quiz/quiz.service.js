@@ -642,12 +642,13 @@ IMPORTANT:
 
   /**
    * @method startQuiz
-   * @description Start a quiz attempt session.
+   * @description Start a quiz attempt session (supports standard and real-time adaptive mode).
    * @param {string} quizId - Quiz ID
    * @param {string} userId - User ID
+   * @param {object} options - Options including isAdaptive
    * @returns {object} Quiz attempt with questions (no correct answers)
    */
-  async startQuiz(quizId, userId) {
+  async startQuiz(quizId, userId, options = {}) {
     const quiz = await Quiz.findOne({ _id: quizId, userId });
 
     if (!quiz) {
@@ -662,6 +663,13 @@ IMPORTANT:
       );
     }
 
+    const { DIFFICULTY } = require('../../constants/difficulty');
+    const isAdaptive = Boolean(
+      options.isAdaptive ||
+      quiz.difficulty === 'adaptive' ||
+      options.adaptiveMode
+    );
+
     // Check for existing ongoing attempt
     const existingAttempt = await QuizAttempt.findOne({
       quizId,
@@ -670,17 +678,121 @@ IMPORTANT:
     });
 
     if (existingAttempt) {
-      // Return existing attempt
+      if (existingAttempt.isAdaptive) {
+        const answeredIds = new Set((existingAttempt.answers || []).map(a => a.questionId.toString()));
+        let currentQ = null;
+
+        // Check if there is an already served question that wasn't answered
+        for (const servedId of existingAttempt.servedQuestionIds || []) {
+          if (!answeredIds.has(servedId.toString())) {
+            currentQ = quiz.questions.find(q => q._id.toString() === servedId.toString());
+            if (currentQ) break;
+          }
+        }
+
+        // Otherwise pick next unserved question
+        if (!currentQ) {
+          const servedIds = new Set((existingAttempt.servedQuestionIds || []).map(id => id.toString()));
+          const unserved = quiz.questions.filter(q => !servedIds.has(q._id.toString()));
+          currentQ = unserved[0] || quiz.questions[0];
+          if (currentQ && !servedIds.has(currentQ._id.toString())) {
+            existingAttempt.servedQuestionIds.push(currentQ._id);
+            await existingAttempt.save();
+          }
+        }
+
+        return {
+          attempt: {
+            id: existingAttempt._id,
+            startedAt: existingAttempt.startedAt,
+            timeLimit: quiz.timeLimit,
+            isAdaptive: true,
+            currentDifficultyLevel: existingAttempt.currentDifficultyLevel,
+            currentAbilityTheta: existingAttempt.currentAbilityTheta,
+            consecutiveCorrect: existingAttempt.consecutiveCorrect,
+            trajectory: existingAttempt.adaptiveTrajectory || [],
+          },
+          currentQuestion: {
+            _id: currentQ._id,
+            questionText: currentQ.questionText,
+            type: currentQ.type,
+            options: currentQ.options,
+            topic: currentQ.topic,
+            difficulty: currentQ.difficulty,
+            bloomsTaxonomy: currentQ.bloomsTaxonomy || 'Understand',
+            order: (existingAttempt.answers?.length || 0) + 1,
+          },
+          isAdaptive: true,
+          currentQuestionIndex: (existingAttempt.answers?.length || 0) + 1,
+          difficulty: existingAttempt.currentDifficultyLevel,
+          totalQuestions: quiz.totalQuestions,
+          timeLimit: quiz.timeLimit,
+        };
+      }
+
+      // Return existing standard attempt
       return {
         attempt: existingAttempt,
         questions: quiz.getQuestionsForClient(),
         timeLimit: quiz.timeLimit,
         difficulty: quiz.difficulty,
         totalQuestions: quiz.totalQuestions,
+        isAdaptive: false,
       };
     }
 
-    // Create new attempt
+    if (isAdaptive) {
+      // Pick initial calibration question (Medium tier)
+      const initialQuestion = adaptiveService.selectInitialAdaptiveQuestion(quiz.questions);
+
+      const attempt = await QuizAttempt.create({
+        userId,
+        quizId,
+        pdfId: quiz.pdfId,
+        totalQuestions: quiz.totalQuestions,
+        timeLimit: quiz.timeLimit * 60,
+        difficulty: quiz.difficulty,
+        status: ATTEMPT_STATUS.ONGOING,
+        startedAt: new Date(),
+        isAdaptive: true,
+        currentDifficultyLevel: initialQuestion.difficulty || DIFFICULTY.MEDIUM,
+        currentAbilityTheta: 0.0,
+        consecutiveCorrect: 0,
+        consecutiveIncorrect: 0,
+        servedQuestionIds: [initialQuestion._id],
+        adaptiveTrajectory: [],
+      });
+
+      return {
+        attempt: {
+          id: attempt._id,
+          startedAt: attempt.startedAt,
+          timeLimit: quiz.timeLimit,
+          isAdaptive: true,
+          currentDifficultyLevel: attempt.currentDifficultyLevel,
+          currentAbilityTheta: attempt.currentAbilityTheta,
+          consecutiveCorrect: 0,
+          trajectory: [],
+        },
+        currentQuestion: {
+          _id: initialQuestion._id,
+          questionText: initialQuestion.questionText,
+          type: initialQuestion.type,
+          options: initialQuestion.options,
+          topic: initialQuestion.topic,
+          difficulty: initialQuestion.difficulty,
+          bloomsTaxonomy: initialQuestion.bloomsTaxonomy || 'Understand',
+          order: 1,
+        },
+        isAdaptive: true,
+        currentQuestionIndex: 1,
+        difficulty: attempt.currentDifficultyLevel,
+        totalQuestions: quiz.totalQuestions,
+        timeLimit: quiz.timeLimit,
+      };
+    }
+
+    // Create standard non-adaptive attempt
     const attempt = await QuizAttempt.create({
       userId,
       quizId,
@@ -690,6 +802,7 @@ IMPORTANT:
       difficulty: quiz.difficulty,
       status: ATTEMPT_STATUS.ONGOING,
       startedAt: new Date(),
+      isAdaptive: false,
     });
 
     return {
@@ -697,10 +810,201 @@ IMPORTANT:
         id: attempt._id,
         startedAt: attempt.startedAt,
         timeLimit: quiz.timeLimit,
+        isAdaptive: false,
       },
       questions: quiz.getQuestionsForClient(),
       difficulty: quiz.difficulty,
       totalQuestions: quiz.totalQuestions,
+      isAdaptive: false,
+    };
+  }
+
+  /**
+   * @method processAdaptiveStep
+   * @description Submit a single answer during real-time adaptive quiz play.
+   * Immediately evaluates correctness, updates theta/difficulty, and returns the next calibrated question.
+   *
+   * @param {string} attemptId - Quiz attempt ID
+   * @param {string} userId - Requesting user ID
+   * @param {object} stepData - { questionId, answer, timeTaken }
+   * @returns {object} { finished, stepResult, calibration, nextQuestion, currentQuestionIndex, totalQuestions, evaluation }
+   */
+  async processAdaptiveStep(attemptId, userId, stepData) {
+    const { questionId, answer, timeTaken = 0 } = stepData;
+
+    const attempt = await QuizAttempt.findOne({
+      _id: attemptId,
+      userId,
+      status: ATTEMPT_STATUS.ONGOING,
+    });
+
+    if (!attempt) {
+      throw new AppError('Ongoing adaptive quiz attempt not found.', 404, 'ATTEMPT_NOT_FOUND');
+    }
+
+    const quiz = await Quiz.findById(attempt.quizId);
+    if (!quiz) {
+      throw new AppError('Quiz not found.', 404, 'QUIZ_NOT_FOUND');
+    }
+
+    // Find the question in the quiz
+    const question = quiz.questions.id(questionId);
+    if (!question) {
+      throw new AppError('Question not found in this quiz.', 404, 'QUESTION_NOT_FOUND');
+    }
+
+    // Evaluate answer
+    const isCorrect = answer !== null && answer !== undefined &&
+      answer.toString().trim().toUpperCase() === question.correctAnswer.trim().toUpperCase();
+
+    // Calibrate next step using IRT / ELO logic in adaptiveService
+    const calibrationResult = adaptiveService.calibrateNextStep(
+      attempt,
+      question,
+      isCorrect,
+      timeTaken,
+      quiz.questions
+    );
+
+    // Save answer to attempt.answers
+    attempt.answers.push({
+      questionId: question._id,
+      answer,
+      isCorrect,
+      timeTaken,
+      answeredAt: new Date(),
+    });
+
+    // Save step into adaptiveTrajectory
+    attempt.adaptiveTrajectory.push({
+      stepNumber: attempt.answers.length,
+      questionId: question._id,
+      questionText: question.questionText,
+      difficulty: question.difficulty,
+      bloomsTaxonomy: question.bloomsTaxonomy || 'Understand',
+      selectedAnswer: answer,
+      correctAnswer: question.correctAnswer,
+      isCorrect,
+      explanation: question.explanation,
+      timeTaken,
+      abilityThetaAfter: calibrationResult.newTheta,
+      calibratedDifficulty: calibrationResult.calibratedLevel,
+      adjustment: calibrationResult.adjustment,
+      calibrationReason: calibrationResult.calibrationReason,
+      answeredAt: new Date(),
+    });
+
+    // Update attempt state
+    attempt.currentAbilityTheta = calibrationResult.newTheta;
+    attempt.currentDifficultyLevel = calibrationResult.calibratedLevel;
+    attempt.consecutiveCorrect = calibrationResult.consecutiveCorrect;
+    attempt.consecutiveIncorrect = calibrationResult.consecutiveIncorrect;
+    attempt.timeTaken = (attempt.timeTaken || 0) + timeTaken;
+
+    if (isCorrect) {
+      attempt.score = (attempt.score || 0) + 1;
+      attempt.correctCount = (attempt.correctCount || 0) + 1;
+    } else {
+      attempt.wrongCount = (attempt.wrongCount || 0) + 1;
+    }
+
+    const targetTotal = attempt.totalQuestions || quiz.totalQuestions || 10;
+    const isFinished = attempt.answers.length >= targetTotal || !calibrationResult.hasMoreQuestions;
+
+    if (isFinished) {
+      // Complete the quiz attempt
+      attempt.status = ATTEMPT_STATUS.COMPLETED;
+      attempt.completedAt = new Date();
+      attempt.percentage = Math.round((attempt.correctCount / attempt.answers.length) * 100);
+      attempt.adaptiveAdjustment = calibrationResult.adjustment;
+
+      await attempt.save();
+
+      // Final evaluation
+      const evaluation = {
+        score: attempt.correctCount,
+        totalQuestions: attempt.answers.length,
+        percentage: attempt.percentage,
+        difficulty: attempt.currentDifficultyLevel,
+        isAdaptive: true,
+        abilityTheta: attempt.currentAbilityTheta,
+        timeTaken: attempt.timeTaken,
+        details: attempt.adaptiveTrajectory.map((t) => ({
+          questionId: t.questionId,
+          questionText: t.questionText,
+          selectedAnswer: t.selectedAnswer,
+          correctAnswer: t.correctAnswer,
+          isCorrect: t.isCorrect,
+          explanation: t.explanation,
+          difficulty: t.difficulty,
+          bloomsTaxonomy: t.bloomsTaxonomy,
+          timeTaken: t.timeTaken,
+        })),
+      };
+
+      // Also trigger gamification XP
+      const gamificationService = require('../gamification/gamification.service');
+      gamificationService.processQuizCompletion(userId, evaluation).catch((err) => {
+        logger.warn('Gamification error in adaptive quiz:', err.message);
+      });
+
+      return {
+        finished: true,
+        stepResult: {
+          isCorrect,
+          correctAnswer: question.correctAnswer,
+          explanation: question.explanation,
+          timeTaken,
+          difficulty: question.difficulty,
+          bloomsTaxonomy: question.bloomsTaxonomy || 'Understand',
+        },
+        calibration: {
+          currentDifficultyLevel: calibrationResult.calibratedLevel,
+          adjustment: calibrationResult.adjustment,
+          reason: calibrationResult.calibrationReason,
+          abilityTheta: calibrationResult.newTheta,
+          streak: calibrationResult.consecutiveCorrect,
+        },
+        evaluation,
+        attemptId: attempt._id,
+      };
+    }
+
+    // Add next question to served IDs and save
+    if (calibrationResult.nextQuestion) {
+      attempt.servedQuestionIds.push(calibrationResult.nextQuestion._id);
+    }
+    await attempt.save();
+
+    return {
+      finished: false,
+      stepResult: {
+        isCorrect,
+        correctAnswer: question.correctAnswer,
+        explanation: question.explanation,
+        timeTaken,
+        difficulty: question.difficulty,
+        bloomsTaxonomy: question.bloomsTaxonomy || 'Understand',
+      },
+      calibration: {
+        currentDifficultyLevel: calibrationResult.calibratedLevel,
+        adjustment: calibrationResult.adjustment,
+        reason: calibrationResult.calibrationReason,
+        abilityTheta: calibrationResult.newTheta,
+        streak: calibrationResult.consecutiveCorrect,
+      },
+      nextQuestion: {
+        _id: calibrationResult.nextQuestion._id,
+        questionText: calibrationResult.nextQuestion.questionText,
+        type: calibrationResult.nextQuestion.type,
+        options: calibrationResult.nextQuestion.options,
+        topic: calibrationResult.nextQuestion.topic,
+        difficulty: calibrationResult.nextQuestion.difficulty,
+        bloomsTaxonomy: calibrationResult.nextQuestion.bloomsTaxonomy || 'Understand',
+        order: attempt.answers.length + 1,
+      },
+      currentQuestionIndex: attempt.answers.length + 1,
+      totalQuestions: targetTotal,
     };
   }
 
@@ -934,7 +1238,7 @@ IMPORTANT:
     return {
       attemptId,
       quizTitle: quiz.title,
-      difficulty: quiz.difficulty,
+      difficulty: attempt.currentDifficultyLevel || quiz.difficulty,
       score: attempt.score,
       percentage: attempt.percentage,
       correctCount: attempt.correctCount,
@@ -942,6 +1246,11 @@ IMPORTANT:
       skippedCount: attempt.skippedCount,
       timeTaken: attempt.timeTaken,
       completedAt: attempt.completedAt,
+      isAdaptive: attempt.isAdaptive || false,
+      currentAbilityTheta: attempt.currentAbilityTheta || 0,
+      currentDifficultyLevel: attempt.currentDifficultyLevel || quiz.difficulty,
+      adaptiveTrajectory: attempt.adaptiveTrajectory || [],
+      adaptiveAdjustment: attempt.adaptiveAdjustment || 'maintained',
       review,
     };
   }

@@ -33,7 +33,8 @@ const QuizResultPage = () => {
     const fetchResult = async () => {
       try {
         const response = await quizAPI.review(id);
-        setResult(response.data.data.result);
+        const data = response.data.data;
+        setResult(data.result || data.review);
       } catch (error) {
         toast.error('Failed to load quiz result.');
         navigate(ROUTES.QUIZ_LIST);
@@ -211,6 +212,88 @@ const QuizResultPage = () => {
               <X size={16} />
             </button>
           </div>
+        </motion.div>
+      )}
+
+      {/* ─── Real-Time Adaptive Trajectory Timeline ───────────────────────────── */}
+      {result.adaptiveTrajectory && result.adaptiveTrajectory.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Card padding="md">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="text-purple-400" size={20} />
+                <h3 className="text-base font-bold text-dark-50">
+                  Adaptive CAT Progression Trajectory
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-dark-400">Final Calibrated Level:</span>
+                <span className={cn(
+                  'px-2.5 py-1 rounded font-bold uppercase',
+                  result.currentDifficultyLevel === 'hard'
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    : result.currentDifficultyLevel === 'easy'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                )}>
+                  {result.currentDifficultyLevel || result.difficulty}
+                </span>
+              </div>
+            </div>
+
+            {/* Trajectory Step Pills / Timeline */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {result.adaptiveTrajectory.map((step, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    'p-3 rounded-xl border flex flex-col justify-between text-xs space-y-2 transition-all',
+                    step.isCorrect
+                      ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-300'
+                      : 'bg-red-500/5 border-red-500/30 text-red-300'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-dark-300">Q{step.stepNumber || idx + 1}</span>
+                    {step.isCorrect ? (
+                      <CheckCircle size={16} className="text-emerald-400" />
+                    ) : (
+                      <XCircle size={16} className="text-red-400" />
+                    )}
+                  </div>
+
+                  <div>
+                    <span className={cn(
+                      'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase',
+                      step.difficulty === 'hard'
+                        ? 'bg-red-500/20 text-red-400'
+                        : step.difficulty === 'easy'
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-yellow-500/20 text-yellow-400'
+                    )}>
+                      {step.difficulty}
+                    </span>
+                    {step.bloomsTaxonomy && (
+                      <span className="ml-1 text-[10px] text-dark-400">
+                        ({step.bloomsTaxonomy})
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-[10px] text-dark-400 flex items-center justify-between pt-1 border-t border-dark-700/50">
+                    <span>{step.timeTaken ? `${step.timeTaken}s` : '—'}</span>
+                    <span className="font-mono text-purple-400">
+                      θ: {typeof step.abilityThetaAfter === 'number' ? (step.abilityThetaAfter > 0 ? `+${step.abilityThetaAfter}` : step.abilityThetaAfter) : '0.0'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         </motion.div>
       )}
 

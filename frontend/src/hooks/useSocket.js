@@ -1,42 +1,51 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { getSocket, disconnectSocket, isSocketEnabled } from '../socket/socket.client.js';
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { getSocket, disconnectSocket, isSocketEnabled, resetSocket } from '../socket/socket.client.js';
 import { useAuthStore } from '../store/auth.store.js';
 
 /**
  * @hook useSocket
  * @description Hook for socket.io connection management with graceful failure handling.
  * @param {boolean} autoConnect - Connect on mount
- * @returns {{ socket, isConnected, connect, disconnect, on, emit, isAvailable }}
+ * @returns {{ socket, isConnected, isAvailable, connect, disconnect, on, emit, retry }}
  */
 export const useSocket = (autoConnect = true) => {
   const { accessToken, user } = useAuthStore();
   const socketRef             = useRef(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [available, setAvailable]     = useState(isSocketEnabled());
 
   const connect = useCallback(() => {
     if (!accessToken) return null;
 
     const socket = getSocket(accessToken);
-    
+
     if (!socket) {
-      console.log('[Socket] Socket not available (disabled or failed)');
+      setAvailable(false);
       return null;
     }
 
     socket.on('connect', () => {
       console.log('[Socket] Connected:', socket.id);
+      setIsConnected(true);
+      setAvailable(true);
       // Join personal room for targeted events
       socket.emit('joinPersonalRoom', { userId: user?._id });
     });
 
     socket.on('connect_error', (error) => {
       console.error('[Socket] Connection error:', error.message);
+      setIsConnected(false);
+      // Reflect if socket was disabled after too many errors
+      setAvailable(isSocketEnabled());
     });
 
     socket.on('disconnect', (reason) => {
       console.log('[Socket] Disconnected:', reason);
+      setIsConnected(false);
     });
 
     socketRef.current = socket;
+    setIsConnected(socket.connected);
     return socket;
   }, [accessToken, user?._id]);
 
@@ -47,7 +56,7 @@ export const useSocket = (autoConnect = true) => {
 
     return () => {
       // Don't disconnect on unmount — singleton pattern
-      // Only disconnect on logout
+      // Only disconnect on logout (handled in auth store)
     };
   }, [autoConnect, accessToken, connect]);
 
@@ -68,13 +77,22 @@ export const useSocket = (autoConnect = true) => {
     return () => {};
   }, []);
 
+  // Manual retry for when socket was disabled
+  const retry = useCallback(() => {
+    resetSocket();
+    setAvailable(true);
+    setIsConnected(false);
+    connect();
+  }, [connect]);
+
   return {
     socket:      socketRef.current,
-    isConnected: socketRef.current?.connected ?? false,
-    isAvailable: isSocketEnabled(),
+    isConnected,
+    isAvailable: available,
     connect,
-    disconnect: disconnectSocket,
+    disconnect:  disconnectSocket,
     emit,
     on,
+    retry,
   };
 };

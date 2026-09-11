@@ -1,31 +1,63 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Brain, Loader2, CheckCircle, XCircle, ChevronDown, ChevronUp,
-  FileText, Clock, Eye, AlertCircle, Play, RotateCcw, Info
+  FileText, Clock, Eye, AlertCircle, Play, RotateCcw, Info,
+  Lightbulb, Sparkles, HelpCircle, ArrowRight, LogOut
 } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme.js';
 import { quizAPI } from '../../api/quiz.api.js';
+import { ROUTES } from '../../constants/routes.js';
 import toast from 'react-hot-toast';
 import { cn } from '../../utils/helpers.js';
 
 /**
+ * Robust helper to verify whether an answer matches the correct answer
+ */
+const checkIsCorrectAnswer = (userKey, optionText, correctAnswer, options) => {
+  if (!userKey || !correctAnswer) return false;
+  
+  const normCorrect = String(correctAnswer).trim().toUpperCase();
+  const normKey = String(userKey).trim().toUpperCase();
+  
+  // 1. Direct letter match (e.g. 'A' === 'A')
+  if (normKey === normCorrect) return true;
+
+  // 2. Direct string match with option text ('True' === 'True', or exact text)
+  if (optionText && String(optionText).trim().toLowerCase() === String(correctAnswer).trim().toLowerCase()) {
+    return true;
+  }
+
+  // 3. Match against options map or object
+  if (options) {
+    const rawVal = options instanceof Map ? options.get(userKey) : options[userKey];
+    if (rawVal && String(rawVal).trim().toLowerCase() === String(correctAnswer).trim().toLowerCase()) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
  * @component QuizView
- * @description Display generated quiz with questions, options, and context references.
+ * @description Display generated quiz with interactive knowledge testing, instant feedback, retry option, and context references.
  */
 const QuizView = ({ quizId, pdfId, onClose }) => {
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   
   const [quiz, setQuiz] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState({});
-  const [showResults, setShowResults] = useState(false);
   const [expandedContext, setExpandedContext] = useState({});
-  const [viewMode, setViewMode] = useState('preview'); // 'preview' or 'test'
   const [showTooltip, setShowTooltip] = useState({});
+
+  // ─── Interactive Knowledge Test State ──────────────────────────────────────
+  // questionStates[qId]: { selectedKey: 'A', status: 'unanswered' | 'correct' | 'wrong' | 'revealed' }
+  const [questionStates, setQuestionStates] = useState({});
 
   // ─── Difficulty Badge Helper - Module 04 ─────────────────────────────────────
   const getDifficultyBadge = (difficulty) => {
@@ -69,9 +101,7 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
     setIsLoading(true);
     try {
       const response = await quizAPI.getQuizById(quizId);
-      console.log('Quiz API Response:', response);
       
-      // Handle different response structures safely
       let quizData = null;
       if (response?.data) {
         if (response.data.data?.quiz) {
@@ -85,8 +115,9 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
         }
       }
       
-      console.log('Extracted Quiz Data:', quizData);
       setQuiz(quizData);
+      // Reset interactive state when loading a new quiz
+      setQuestionStates({});
     } catch (error) {
       console.error('Quiz fetch error:', error);
       toast.error(error.response?.data?.message || 'Failed to fetch quiz');
@@ -106,7 +137,6 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
       toast.dismiss('quiz-generation');
       toast.success('Quiz generated successfully!');
       
-      // Handle different response structures safely
       let quizData = null;
       if (response?.data) {
         if (response.data.data?.quiz) {
@@ -119,6 +149,7 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
       }
       
       setQuiz(quizData);
+      setQuestionStates({});
       setIsGenerating(false);
     } catch (error) {
       toast.dismiss('quiz-generation');
@@ -128,33 +159,124 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
     }
   };
 
-  const handleAnswerSelect = (questionId, answer) => {
-    setSelectedAnswers(prev => ({
+  // ─── Interactive Knowledge Selection Handler ─────────────────────────────────
+  const handleSelectOption = (question, key, optionText) => {
+    const qId = question._id;
+    const currentState = questionStates[qId];
+
+    // If question is already answered correctly or revealed, prevent re-clicking
+    if (currentState?.status === 'correct' || currentState?.status === 'revealed') {
+      return;
+    }
+
+    const isCorrect = checkIsCorrectAnswer(key, optionText, question.correctAnswer, question.options);
+
+    if (isCorrect) {
+      setQuestionStates(prev => ({
+        ...prev,
+        [qId]: {
+          selectedKey: key,
+          status: 'correct',
+        }
+      }));
+      toast.success('Correct answer! 🎉', {
+        id: `toast-correct-${qId}`,
+        duration: 3500,
+      });
+    } else {
+      setQuestionStates(prev => ({
+        ...prev,
+        [qId]: {
+          selectedKey: key,
+          status: 'wrong',
+        }
+      }));
+      toast.error('Wrong answer! ❌', {
+        id: `toast-wrong-${qId}`,
+        duration: 3500,
+      });
+    }
+  };
+
+  // ─── Retry Question Handler ──────────────────────────────────────────────────
+  const handleRetryQuestion = (questionId) => {
+    setQuestionStates(prev => ({
       ...prev,
-      [questionId]: answer
+      [questionId]: {
+        selectedKey: null,
+        status: 'unanswered',
+      }
     }));
+    toast('Choose your answer again! 🔄', {
+      icon: '🔄',
+      duration: 2000,
+    });
   };
 
-  const handleSubmitQuiz = () => {
-    if (!quiz?.questions) {
-      toast.error('Quiz data not available');
-      return;
-    }
-    
-    const answeredCount = Object.keys(selectedAnswers).length;
-    if (answeredCount < quiz.questions.length) {
-      toast.error(`Please answer all questions (${answeredCount}/${quiz.questions.length} answered)`);
-      return;
-    }
-    
-    setShowResults(true);
-    toast.success('Quiz submitted successfully!');
+  // ─── Reveal Correct Answer Handler ───────────────────────────────────────────
+  const handleRevealCorrectAnswer = (questionId) => {
+    setQuestionStates(prev => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        status: 'revealed',
+      }
+    }));
+    toast('Correct answer revealed! 💡', {
+      icon: '💡',
+      duration: 2500,
+    });
   };
 
-  const handleResetQuiz = () => {
-    setSelectedAnswers({});
-    setCurrentQuestionIndex(0);
-    setShowResults(false);
+  // ─── Advance to Next Question Handler ────────────────────────────────────────
+  const handleNextQuestion = (currentIndex) => {
+    const nextIndex = currentIndex + 1;
+    const total = quiz?.questions?.length || 0;
+    
+    if (nextIndex < total) {
+      const nextCard = document.getElementById(`question-card-${nextIndex}`);
+      if (nextCard) {
+        nextCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        nextCard.classList.add('ring-2', 'ring-indigo-500');
+        setTimeout(() => {
+          nextCard.classList.remove('ring-2', 'ring-indigo-500');
+        }, 1500);
+      }
+      toast(`Proceeded to Question ${nextIndex + 1} 🎯`, { icon: '➡️' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      toast.success('🎉 Congratulations! You have finished all questions in this quiz.');
+    }
+  };
+
+  // ─── Quit Quiz Handler ───────────────────────────────────────────────────────
+  const handleQuitQuiz = () => {
+    if (onClose) {
+      onClose();
+    } else {
+      navigate('/quizzes');
+    }
+    toast('Exited quiz.', { icon: '👋' });
+  };
+
+  // ─── Reset All Questions ─────────────────────────────────────────────────────
+  const handleResetAll = () => {
+    setQuestionStates({});
+    toast.success('Quiz reset! Test your knowledge from the start.');
+  };
+
+  // ─── Reveal All Answers for quick study review ────────────────────────────────
+  const handleRevealAll = () => {
+    if (!quiz?.questions) return;
+    const allRevealed = {};
+    quiz.questions.forEach(q => {
+      allRevealed[q._id] = {
+        selectedKey: null,
+        status: 'revealed',
+      };
+    });
+    setQuestionStates(allRevealed);
+    toast('All correct answers revealed for review! 💡', { icon: '💡' });
   };
 
   const toggleContext = (questionId) => {
@@ -166,30 +288,26 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
 
   const getContextForQuestion = (question) => {
     if (!quiz?.contextReferences || !question?.sourceChunkIndex) return null;
-    
-    const contextRef = quiz.contextReferences.find(
-      ref => ref.chunkIndex === question.sourceChunkIndex
-    );
-    
-    return contextRef || null;
+    return quiz.contextReferences.find(ref => ref.chunkIndex === question.sourceChunkIndex) || null;
   };
 
-  const getScore = () => {
-    if (!quiz?.questions || !showResults) return { correct: 0, total: 0, percentage: 0 };
-    
+  // Compute live knowledge score
+  const getKnowledgeStats = () => {
+    if (!quiz?.questions) return { correct: 0, wrong: 0, answered: 0, total: 0, percentage: 0 };
+    const total = quiz.questions.length;
     let correct = 0;
-    quiz.questions.forEach((question, index) => {
-      const userAnswer = selectedAnswers[question._id];
-      if (userAnswer === question.correctAnswer) {
-        correct++;
-      }
+    let wrong = 0;
+
+    quiz.questions.forEach(q => {
+      const state = questionStates[q._id];
+      if (state?.status === 'correct') correct++;
+      else if (state?.status === 'wrong') wrong++;
     });
-    
-    return {
-      correct,
-      total: quiz.questions.length,
-      percentage: quiz.questions.length > 0 ? Math.round((correct / quiz.questions.length) * 100) : 0
-    };
+
+    const answered = Object.values(questionStates).filter(s => s.status === 'correct' || s.status === 'wrong' || s.status === 'revealed').length;
+    const percentage = answered > 0 ? Math.round((correct / answered) * 100) : 0;
+
+    return { correct, wrong, answered, total, percentage };
   };
 
   const getStatusBadge = (type) => {
@@ -199,14 +317,14 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
         className: 'bg-blue-500/20 text-blue-400 border-blue-500/30'
       },
       true_false: {
-        label: 'True/False',
+        label: 'True / False',
         className: 'bg-purple-500/20 text-purple-400 border-purple-500/30'
       }
     };
     
     const badgeConfig = config[type] || config.mcq;
     return (
-      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${badgeConfig.className}`}>
+      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${badgeConfig.className}`}>
         {badgeConfig.label}
       </span>
     );
@@ -248,7 +366,7 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
         </p>
         <button
           onClick={handleGenerateQuiz}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-colors"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-colors shadow-lg shadow-indigo-600/30"
         >
           <Brain size={20} />
           Generate Quiz
@@ -267,251 +385,270 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
         <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
           Unable to load quiz data. Please try again.
         </p>
-        <button
-          onClick={onClose}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-gray-600 hover:bg-gray-500 text-white font-medium rounded-xl transition-colors"
-        >
-          <RotateCcw size={20} />
-          Go Back
-        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gray-600 hover:bg-gray-500 text-white font-medium rounded-xl transition-colors"
+          >
+            <RotateCcw size={20} />
+            Go Back
+          </button>
+        )}
       </div>
     );
   }
 
-  const score = getScore();
+  const stats = getKnowledgeStats();
 
   return (
     <div className="space-y-6">
-      {/* Quiz Header */}
-      <div className={`${isDark ? 'bg-slate-800/40 border-white/10' : 'bg-white/40 border-light-300'} backdrop-blur-md rounded-2xl p-6`}>
-        <div className="flex items-center justify-between mb-4">
+      {/* ─── Quiz Header & Interactive Knowledge Status ───────────────────────── */}
+      <div className={`${isDark ? 'bg-slate-800/60 border-white/10' : 'bg-white border-light-300'} backdrop-blur-md rounded-2xl p-6 border shadow-xl`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h2 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-light-900'}`}>
-              {quiz.title || 'Untitled Quiz'}
-            </h2>
+            <div className="flex items-center gap-2.5 flex-wrap mb-1">
+              <h2 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-light-900'}`}>
+                {quiz.title || 'Knowledge Test Quiz'}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                <Sparkles size={12} /> Interactive Knowledge Test
+              </span>
+            </div>
+
             <div className="flex items-center gap-4 mt-2 text-sm">
               <span className={`${isDark ? 'text-slate-400' : 'text-light-600'}`}>
                 <Clock size={14} className="inline mr-1" />
-                {quiz.timeLimit || 0} minutes
+                {quiz.timeLimit || 15} mins
               </span>
               <span className={`${isDark ? 'text-slate-400' : 'text-light-600'}`}>
                 <FileText size={14} className="inline mr-1" />
-                {quiz.totalQuestions || 0} questions
+                {quiz.totalQuestions || quiz.questions?.length || 0} questions
               </span>
               <span className={`${isDark ? 'text-slate-400' : 'text-light-600'}`}>
                 {quiz.mcqCount || 0} MCQs • {quiz.trueFalseCount || 0} True/False
               </span>
             </div>
-            
-            {/* Module 04: Difficulty Breakdown */}
-            {quiz.difficultyBreakdown && (
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-light-600'}`}>Difficulty Distribution</span>
-                  <div className="flex gap-2 text-xs">
-                    <span className="text-emerald-400">Easy: {quiz.difficultyBreakdown.easy || 0}</span>
-                    <span className="text-yellow-400">Medium: {quiz.difficultyBreakdown.medium || 0}</span>
-                    <span className="text-red-400">Hard: {quiz.difficultyBreakdown.hard || 0}</span>
-                  </div>
-                </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden flex">
-                  {quiz.difficultyBreakdown.easy > 0 && (
-                    <div 
-                      className="bg-emerald-500 transition-all duration-300"
-                      style={{ width: `${(quiz.difficultyBreakdown.easy / (quiz.totalQuestions || 1)) * 100}%` }}
-                    />
-                  )}
-                  {quiz.difficultyBreakdown.medium > 0 && (
-                    <div 
-                      className="bg-yellow-500 transition-all duration-300"
-                      style={{ width: `${(quiz.difficultyBreakdown.medium / (quiz.totalQuestions || 1)) * 100}%` }}
-                    />
-                  )}
-                  {quiz.difficultyBreakdown.hard > 0 && (
-                    <div 
-                      className="bg-red-500 transition-all duration-300"
-                      style={{ width: `${(quiz.difficultyBreakdown.hard / (quiz.totalQuestions || 1)) * 100}%` }}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
           </div>
           
-          <div className="flex gap-2">
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2.5 flex-wrap">
             <button
-              onClick={() => setViewMode(viewMode === 'preview' ? 'test' : 'preview')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                viewMode === 'preview'
-                  ? `${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-light-200 hover:bg-light-300 text-light-700'}`
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+              onClick={handleResetAll}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border ${
+                isDark 
+                  ? 'bg-slate-700/60 hover:bg-slate-700 border-white/10 text-slate-300' 
+                  : 'bg-light-200 hover:bg-light-300 border-light-300 text-light-700'
               }`}
+              title="Reset all questions to try again"
             >
-              {viewMode === 'preview' ? <Play size={16} /> : <Eye size={16} />}
-              {viewMode === 'preview' ? 'Start Quiz' : 'Preview Mode'}
+              <RotateCcw size={14} />
+              Reset Test
             </button>
-            
-            {viewMode === 'test' && !showResults && (
-              <button
-                onClick={handleSubmitQuiz}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-              >
-                <CheckCircle size={16} />
-                Submit Quiz
-              </button>
-            )}
-            
-            {showResults && (
-              <button
-                onClick={handleResetQuiz}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-              >
-                <RotateCcw size={16} />
-                Retake Quiz
-              </button>
-            )}
+
+            <button
+              onClick={handleRevealAll}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border ${
+                isDark 
+                  ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300' 
+                  : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-700'
+              }`}
+              title="Reveal all answers for revision"
+            >
+              <Lightbulb size={14} />
+              Reveal All
+            </button>
+
+            <button
+              onClick={() => navigate(ROUTES.QUIZ_PLAY.replace(':id', quiz._id))}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25 hover:scale-105 active:scale-95"
+            >
+              <Play size={16} />
+              Play Full Timed Quiz
+            </button>
           </div>
         </div>
 
-        {/* Score Display */}
-        {showResults && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`mt-4 p-4 rounded-xl ${
-              score.percentage >= 70
-                ? 'bg-emerald-500/20 border-emerald-500/30'
-                : score.percentage >= 50
-                ? 'bg-yellow-500/20 border-yellow-500/30'
-                : 'bg-red-500/20 border-red-500/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {score.percentage >= 70 ? (
-                  <CheckCircle className="w-6 h-6 text-emerald-400" />
-                ) : score.percentage >= 50 ? (
-                  <AlertCircle className="w-6 h-6 text-yellow-400" />
-                ) : (
-                  <XCircle className="w-6 h-6 text-red-400" />
-                )}
-                <span className={`font-semibold ${isDark ? 'text-white' : 'text-light-900'}`}>
-                  {score.correct} / {score.totalQuestions} Correct
+        {/* Live Score Tracker Bar */}
+        <div className="mt-5 pt-4 border-t border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-2">
+            <span className={`font-medium ${isDark ? 'text-slate-300' : 'text-light-700'}`}>
+              Your Progress: <span className="font-bold text-indigo-400">{stats.answered} / {stats.total} Answered</span>
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                <CheckCircle size={14} /> {stats.correct} Correct
+              </span>
+              <span className="flex items-center gap-1 text-red-400 font-semibold">
+                <XCircle size={14} /> {stats.wrong} Wrong
+              </span>
+              {stats.answered > 0 && (
+                <span className={`font-bold px-2 py-0.5 rounded ${isDark ? 'bg-slate-700 text-white' : 'bg-light-200 text-dark-800'}`}>
+                  {stats.percentage}% Accuracy
                 </span>
-              </div>
-              <div className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-light-900'}`}>
-                {score.percentage}%
-              </div>
+              )}
             </div>
-          </motion.div>
-        )}
+          </div>
+          
+          {/* Progress bar */}
+          <div className="h-2 bg-slate-700/60 rounded-full overflow-hidden flex">
+            {stats.correct > 0 && (
+              <div 
+                className="bg-emerald-500 transition-all duration-300"
+                style={{ width: `${(stats.correct / (stats.total || 1)) * 100}%` }}
+                title={`${stats.correct} correct`}
+              />
+            )}
+            {stats.wrong > 0 && (
+              <div 
+                className="bg-red-500 transition-all duration-300"
+                style={{ width: `${(stats.wrong / (stats.total || 1)) * 100}%` }}
+                title={`${stats.wrong} wrong`}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Questions List */}
-      <div className="space-y-4">
+      {/* ─── Questions List ──────────────────────────────────────────────────── */}
+      <div className="space-y-5">
         {(quiz.questions || []).map((question, index) => {
+          const qId = question._id || `q-${index}`;
+          const qState = questionStates[qId] || { status: 'unanswered', selectedKey: null };
           const contextRef = getContextForQuestion(question);
-          const userAnswer = selectedAnswers[question._id];
-          const isCorrect = userAnswer === question.correctAnswer;
-          const isExpanded = expandedContext[question._id];
+          const isExpanded = expandedContext[qId];
+
+          // Normalized options entries
+          const optionsEntries = question.options instanceof Map 
+            ? Array.from(question.options.entries())
+            : Object.entries(question.options || {});
 
           return (
             <motion.div
-              key={question._id || index}
-              initial={{ opacity: 0, y: 20 }}
+              key={qId}
+              id={`question-card-${index}`}
+              initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className={`${isDark ? 'bg-slate-800/40 border-white/10' : 'bg-white/40 border-light-300'} backdrop-blur-md rounded-2xl p-6`}
+              transition={{ delay: index * 0.04 }}
+              className={`rounded-2xl p-6 border transition-all ${
+                qState.status === 'correct'
+                  ? 'border-emerald-500/40 bg-emerald-950/10 shadow-lg shadow-emerald-950/20'
+                  : qState.status === 'wrong'
+                  ? 'border-red-500/40 bg-red-950/10 shadow-lg shadow-red-950/20'
+                  : qState.status === 'revealed'
+                  ? 'border-amber-500/40 bg-amber-950/10'
+                  : `${isDark ? 'bg-slate-800/40 border-white/10 hover:border-white/20' : 'bg-white border-light-300'} backdrop-blur-md`
+              }`}
             >
               {/* Question Header */}
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2 flex-wrap">
-                    <span className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
-                      Q{index + 1}
+                  <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-light-200 text-light-700'}`}>
+                      Question {index + 1}
                     </span>
                     {getStatusBadge(question.type)}
                     
-                    {/* Module 04: Difficulty Badge */}
+                    {/* Difficulty Badge */}
                     {question.difficulty && (
                       <span className={cn(
-                        'px-2.5 py-1 rounded-md text-xs font-semibold border',
+                        'px-2.5 py-0.5 rounded-full text-xs font-semibold border',
                         getDifficultyBadge(question.difficulty).className
                       )}>
                         {getDifficultyBadge(question.difficulty).label}
                       </span>
                     )}
 
-                    {/* Module 04: Bloom's Taxonomy Badge */}
+                    {/* Bloom's Taxonomy Badge */}
                     {question.bloomsTaxonomy && (
                       <span className={cn(
-                        'px-2.5 py-1 rounded-md text-xs font-medium bg-slate-700 border border-slate-600',
+                        'px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-700/80 border border-slate-600',
                         getBloomColor(question.bloomsTaxonomy)
                       )}>
                         Bloom's: {question.bloomsTaxonomy}
                       </span>
                     )}
 
-                    {/* Module 04: Classification Reason Tooltip */}
+                    {/* Question Status Badge */}
+                    {qState.status === 'correct' && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                        <CheckCircle size={12} /> Correct
+                      </span>
+                    )}
+                    {qState.status === 'wrong' && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/40 flex items-center gap-1">
+                        <XCircle size={12} /> Incorrect
+                      </span>
+                    )}
+                    {qState.status === 'revealed' && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+                        <Lightbulb size={12} /> Answer Revealed
+                      </span>
+                    )}
+
+                    {/* Classification Reason Tooltip */}
                     {question.classificationReason && (
                       <div className="relative">
                         <button
-                          className="p-1.5 rounded-md bg-slate-700 border border-slate-600 hover:bg-slate-600 transition-colors"
-                          onMouseEnter={() => setShowTooltip(prev => ({ ...prev, [question._id]: true }))}
-                          onMouseLeave={() => setShowTooltip(prev => ({ ...prev, [question._id]: false }))}
+                          className="p-1 rounded-md bg-slate-700/80 border border-slate-600 hover:bg-slate-600 transition-colors"
+                          onMouseEnter={() => setShowTooltip(prev => ({ ...prev, [qId]: true }))}
+                          onMouseLeave={() => setShowTooltip(prev => ({ ...prev, [qId]: false }))}
+                          aria-label="Classification reason"
                         >
-                          <Info size={14} className="text-slate-400" />
+                          <Info size={12} className="text-slate-400" />
                         </button>
-                        {showTooltip[question._id] && (
-                          <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-10">
+                        {showTooltip[qId] && (
+                          <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-20">
                             <p className="text-xs text-slate-200 leading-relaxed">
                               <span className="font-semibold text-slate-400">Classification:</span> {question.classificationReason}
                             </p>
-                            <div className="absolute bottom-0 left-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-slate-800 border-r border-b border-slate-600"></div>
                           </div>
                         )}
                       </div>
                     )}
                   </div>
-                  <p className={`text-lg ${isDark ? 'text-white' : 'text-light-900'} leading-relaxed`}>
+
+                  <p className={`text-base sm:text-lg font-medium ${isDark ? 'text-white' : 'text-light-900'} leading-relaxed`}>
                     {question.questionText || 'Question text not available'}
                   </p>
                 </div>
                 
-                {viewMode === 'preview' && contextRef && (
+                {contextRef && (
                   <button
-                    onClick={() => toggleContext(question._id)}
-                    className={`ml-4 p-2 rounded-lg transition-colors ${
+                    onClick={() => toggleContext(qId)}
+                    className={`p-2 rounded-xl transition-all flex-shrink-0 ${
                       isExpanded
                         ? 'bg-indigo-500/20 text-indigo-400'
                         : `${isDark ? 'bg-slate-700/50 hover:bg-slate-700 text-slate-300' : 'bg-light-200 hover:bg-light-300 text-light-700'}`
                     }`}
+                    title="Toggle Context Reference"
                   >
-                    {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                   </button>
                 )}
               </div>
 
               {/* Context Reference Accordion */}
-              {viewMode === 'preview' && contextRef && (
+              {contextRef && (
                 <AnimatePresence>
                   {isExpanded && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className={`mt-4 p-4 rounded-xl ${isDark ? 'bg-slate-900/50 border-white/10' : 'bg-light-100 border-light-300'}`}
+                      className={`mb-4 p-4 rounded-xl border ${isDark ? 'bg-slate-900/60 border-white/10' : 'bg-light-100 border-light-300'}`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <FileText size={16} className="text-indigo-400" />
                         <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-light-900'}`}>
-                          Context Source (Chunk {contextRef.chunkIndex})
+                          Context Source (Chunk #{contextRef.chunkIndex})
                         </span>
-                        <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
-                          Relevance: {Math.round(contextRef.relevanceScore * 100)}%
-                        </span>
+                        {contextRef.relevanceScore && (
+                          <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
+                            Relevance: {Math.round(contextRef.relevanceScore * 100)}%
+                          </span>
+                        )}
                       </div>
-                      <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-light-700'} leading-relaxed`}>
+                      <p className={`text-xs sm:text-sm ${isDark ? 'text-slate-300' : 'text-light-700'} leading-relaxed`}>
                         {contextRef.text}
                       </p>
                     </motion.div>
@@ -519,75 +656,251 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
                 </AnimatePresence>
               )}
 
-              {/* Options */}
-              <div className="mt-4 space-y-2">
-                {(() => {
-                  // Handle different option formats (Map vs Object)
-                  const optionsEntries = question.options instanceof Map 
-                    ? Array.from(question.options.entries())
-                    : Object.entries(question.options || {});
-                  
-                  return optionsEntries.map(([key, option]) => {
-                    const isSelected = userAnswer === key;
-                    const isCorrectOption = key === question.correctAnswer;
-                    
-                    let optionClassName = '';
-                    let icon = null;
-                    
-                    if (viewMode === 'test' && !showResults) {
-                      // Test mode - show selection state
-                      optionClassName = isSelected
-                        ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400'
-                        : `${isDark ? 'bg-slate-700/50 border-white/10 hover:bg-slate-700 text-slate-300' : 'bg-light-200 border-light-300 hover:bg-light-300 text-light-700'}`;
-                    } else if (showResults) {
-                      // Results mode - show correct/incorrect
-                      if (isCorrectOption) {
-                        optionClassName = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
-                      icon = <CheckCircle size={16} />;
-                    } else if (isSelected && !isCorrectOption) {
-                      optionClassName = 'bg-red-500/20 border-red-500/50 text-red-400';
-                      icon = <XCircle size={16} />;
+              {/* ─── Interactive Options ─────────────────────────────────────── */}
+              <div className="space-y-2.5">
+                {optionsEntries.map(([key, optionText]) => {
+                  const isThisKey = key === qState.selectedKey;
+                  const isThisCorrectOption = checkIsCorrectAnswer(key, optionText, question.correctAnswer, question.options);
+
+                  let optionStyle = '';
+                  let rightBadge = null;
+                  let icon = null;
+
+                  if (qState.status === 'correct') {
+                    if (isThisKey) {
+                      // Player's answer was correct! Highlight in rich green
+                      optionStyle = 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-2 ring-emerald-500/40 font-semibold shadow-md shadow-emerald-500/10';
+                      icon = <CheckCircle size={18} className="text-emerald-400 flex-shrink-0" />;
+                      rightBadge = (
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-1">
+                          Correct Answer
+                        </span>
+                      );
                     } else {
-                      optionClassName = `${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-light-200 border-light-300'} ${isDark ? 'text-slate-400' : 'text-light-600'}`;
+                      optionStyle = isDark 
+                        ? 'bg-slate-800/30 border-white/5 text-slate-500 opacity-60' 
+                        : 'bg-light-200/40 border-light-300 text-light-400 opacity-60';
+                    }
+                  } else if (qState.status === 'wrong') {
+                    if (isThisKey) {
+                      // Player's answer was wrong! Highlight in vibrant red
+                      optionStyle = 'bg-red-500/20 border-red-500 text-red-300 ring-2 ring-red-500/40 font-semibold shadow-md shadow-red-500/10';
+                      icon = <XCircle size={18} className="text-red-400 flex-shrink-0" />;
+                      rightBadge = (
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-500/30 text-red-300 font-semibold flex items-center gap-1">
+                          Your Answer (Incorrect)
+                        </span>
+                      );
+                    } else {
+                      optionStyle = isDark 
+                        ? 'bg-slate-800/40 border-white/10 text-slate-400' 
+                        : 'bg-light-100 border-light-300 text-light-600';
+                    }
+                  } else if (qState.status === 'revealed') {
+                    if (isThisCorrectOption) {
+                      // Correct option revealed in green!
+                      optionStyle = 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-2 ring-emerald-500/40 font-semibold';
+                      icon = <CheckCircle size={18} className="text-emerald-400 flex-shrink-0" />;
+                      rightBadge = (
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-1">
+                          Correct Answer
+                        </span>
+                      );
+                    } else if (isThisKey) {
+                      // User's previous incorrect answer
+                      optionStyle = 'bg-red-500/10 border-red-500/30 text-red-400 line-through opacity-75';
+                      icon = <XCircle size={18} className="text-red-400 flex-shrink-0" />;
+                    } else {
+                      optionStyle = isDark 
+                        ? 'bg-slate-800/30 border-white/5 text-slate-500 opacity-60' 
+                        : 'bg-light-200/40 border-light-300 text-light-400 opacity-60';
                     }
                   } else {
-                    // Preview mode - show correct answer
-                    optionClassName = isCorrectOption
-                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                      : `${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-light-200 border-light-300'} ${isDark ? 'text-slate-400' : 'text-light-600'}`;
-                    if (isCorrectOption) icon = <CheckCircle size={16} />;
+                    // Default unanswered state - Clean, inviting player to test knowledge
+                    optionStyle = isDark 
+                      ? 'bg-slate-700/30 border-white/10 hover:bg-slate-700/70 hover:border-indigo-500/60 text-slate-200 hover:scale-[1.01]' 
+                      : 'bg-light-100 border-light-300 hover:bg-light-200 hover:border-indigo-500/60 text-light-800 hover:scale-[1.01]';
                   }
 
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => viewMode === 'test' && !showResults && handleAnswerSelect(question._id, key)}
-                        disabled={viewMode === 'test' && showResults}
-                        className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between group ${
-                          optionClassName
-                        } ${viewMode === 'test' && !showResults ? 'cursor-pointer hover:scale-[1.02]' : 'cursor-default'}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium">{key}.</span>
-                          <span className="flex-1">{option || 'Option not available'}</span>
-                        </div>
-                        {icon && <span className="ml-2">{icon}</span>}
-                      </button>
-                    );
-                  });
-                })()}
+                  const isClickable = qState.status === 'unanswered' || qState.status === 'wrong';
+
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => handleSelectOption(question, key, optionText)}
+                      disabled={qState.status === 'correct' || qState.status === 'revealed'}
+                      className={`w-full text-left p-3.5 sm:p-4 rounded-xl border transition-all flex items-center justify-between gap-3 ${optionStyle} ${
+                        isClickable ? 'cursor-pointer active:scale-[0.99]' : 'cursor-default'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                          isThisKey && qState.status === 'correct'
+                            ? 'bg-emerald-500 text-white'
+                            : isThisKey && qState.status === 'wrong'
+                            ? 'bg-red-500 text-white'
+                            : isThisCorrectOption && qState.status === 'revealed'
+                            ? 'bg-emerald-500 text-white'
+                            : isDark
+                            ? 'bg-slate-700 text-slate-300'
+                            : 'bg-light-300 text-light-700'
+                        }`}>
+                          {key}
+                        </span>
+                        <span className="text-sm font-medium leading-relaxed truncate-words">
+                          {optionText || 'Option text unavailable'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {rightBadge}
+                        {icon}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Explanation */}
-              {showResults && question.explanation && (
+              {/* ─── Feedback & Action: When Answer is WRONG ─────────────────── */}
+              {qState.status === 'wrong' && (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className={`mt-4 p-4 rounded-xl ${isDark ? 'bg-slate-900/50 border-white/10' : 'bg-light-100 border-light-300'}`}
+                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="mt-4 p-4 rounded-xl border border-red-500/30 bg-gradient-to-r from-red-500/10 via-amber-500/5 to-transparent backdrop-blur-md"
                 >
-                  <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-light-700'}`}>
-                    <span className="font-medium">Explanation:</span> {question.explanation || 'No explanation available'}
-                  </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <AlertCircle size={18} className="text-red-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-red-300">
+                          Wrong answer! ❌
+                        </p>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Would you like to retry, or should I show the correct answer?
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* The 2 required action buttons */}
+                    <div className="flex items-center gap-2.5 flex-shrink-0 self-end sm:self-center">
+                      <button
+                        onClick={() => handleRetryQuestion(qId)}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 hover:border-slate-500 text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-sm"
+                      >
+                        <RotateCcw size={14} className="text-indigo-400" />
+                        Retry
+                      </button>
+
+                      <button
+                        onClick={() => handleRevealCorrectAnswer(qId)}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-md shadow-amber-500/20"
+                      >
+                        <Lightbulb size={14} />
+                        Show Correct Answer
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─── Feedback: When Answer is CORRECT ────────────────────────── */}
+              {qState.status === 'correct' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="mt-4 p-4 rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent backdrop-blur-md shadow-md shadow-emerald-500/5"
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <CheckCircle size={18} className="text-emerald-400" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-emerald-300">
+                        Correct answer! 🎉 Excellent job!
+                      </p>
+                      {question.explanation && (
+                        <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                          <span className="font-semibold text-emerald-400">Explanation:</span> {question.explanation}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ─── Interactive Prompt on Correct Answer ─────────────────── */}
+                  <div className="pt-3 border-t border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <p className="text-xs font-semibold text-emerald-200">
+                      What would you like to do next?
+                    </p>
+
+                    <div className="flex items-center gap-2 flex-wrap self-end sm:self-center">
+                      {/* 1. Retry Question */}
+                      <button
+                        onClick={() => handleRetryQuestion(qId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 hover:border-slate-500 text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-sm"
+                        title="Retry this question again"
+                      >
+                        <RotateCcw size={13} className="text-indigo-400" />
+                        Retry
+                      </button>
+
+                      {/* 2. Next Question */}
+                      <button
+                        onClick={() => handleNextQuestion(index)}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95 shadow-md shadow-emerald-600/20"
+                        title="Continue to next question"
+                      >
+                        <span>{index + 1 < (quiz.questions?.length || 0) ? 'Next Question' : 'Finish Quiz'}</span>
+                        <ArrowRight size={13} />
+                      </button>
+
+                      {/* 3. Quit */}
+                      <button
+                        onClick={handleQuitQuiz}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold transition-all hover:scale-105 active:scale-95"
+                        title="Quit this quiz"
+                      >
+                        <LogOut size={13} />
+                        Quit
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─── Feedback: When Answer is REVEALED ───────────────────────── */}
+              {qState.status === 'revealed' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-md"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Lightbulb size={18} className="text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-amber-300">
+                          Correct Answer: Option {question.correctAnswer}
+                        </p>
+                        {question.explanation && (
+                          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                            <span className="font-semibold text-amber-400">Explanation:</span> {question.explanation}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleRetryQuestion(qId)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 text-xs font-medium transition-all hover:scale-105 active:scale-95 flex-shrink-0"
+                    >
+                      <RotateCcw size={12} />
+                      Try Again
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </motion.div>

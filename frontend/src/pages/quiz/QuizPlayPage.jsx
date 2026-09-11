@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Flag, Clock,
   CheckCircle, XCircle, AlertCircle, Info, Timer,
+  Sparkles, Zap, Flame, Award, ArrowRight, Lightbulb
 } from 'lucide-react';
 import { useQuizStore } from '../../store/quiz.store.js';
 import { ROUTES } from '../../constants/routes.js';
@@ -19,7 +20,7 @@ import toast from 'react-hot-toast';
 
 /**
  * @page QuizPlayPage
- * @description Interactive quiz play interface with timer and navigation.
+ * @description Interactive quiz play interface supporting both Standard and Real-Time Adaptive CAT mode.
  */
 const QuizPlayPage = () => {
   const { id } = useParams();
@@ -29,15 +30,23 @@ const QuizPlayPage = () => {
     currentQuiz,
     currentQuestion,
     questionIndex,
+    totalAdaptiveQuestions,
     answers,
     timeRemaining,
     isLoading,
     isSubmitting,
+    isSubmittingStep,
+    isAdaptiveMode,
+    currentDifficultyLevel,
+    adaptiveCalibration,
+    adaptiveTrajectory,
+    lastStepResult,
     startQuiz,
     selectAnswer,
     nextQuestion,
     previousQuestion,
     submitQuiz,
+    submitAdaptiveStep,
     updateTimer,
     clearQuizState,
   } = useQuizStore();
@@ -47,7 +56,8 @@ const QuizPlayPage = () => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showAutoSubmitModal, setShowAutoSubmitModal] = useState(false);
   const [quizStartTime, setQuizStartTime] = useState(null);
-  const [adaptiveNotification, setAdaptiveNotification] = useState(null);
+  const [stepStartTime, setStepStartTime] = useState(Date.now());
+  const [stepFeedback, setStepFeedback] = useState(null);
 
   // ─── Difficulty Badge Helper - Module 04 ─────────────────────────────────────
   const getDifficultyBadge = (difficulty) => {
@@ -84,13 +94,16 @@ const QuizPlayPage = () => {
   // ─── Initialize Quiz ──────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      const result = await startQuiz(id);
+      const searchParams = new URLSearchParams(window.location.search);
+      const isAdaptiveQuery = searchParams.get('adaptive') === 'true';
+
+      const result = await startQuiz(id, { isAdaptive: isAdaptiveQuery });
       if (!result.success) {
         toast.error('Failed to start quiz.');
         navigate(ROUTES.QUIZ_LIST);
       } else {
-        // Module 05: Record quiz start time for accurate time tracking
         setQuizStartTime(Date.now());
+        setStepStartTime(Date.now());
       }
     };
     init();
@@ -109,7 +122,6 @@ const QuizPlayPage = () => {
       if (newTime <= 0 && !autoSubmitted) {
         setAutoSubmitted(true);
         setShowAutoSubmitModal(true);
-        // Auto-submit after showing modal
         setTimeout(() => {
           handleSubmit(true);
         }, 2000);
@@ -119,9 +131,29 @@ const QuizPlayPage = () => {
     return () => clearInterval(interval);
   }, [currentQuiz, timeRemaining, autoSubmitted]);
 
-  // ─── Submit Handler with Time Tracking - Module 05 ─────────────────────────────
+  // ─── Normalized Options ───────────────────────────────────────────────────
+  const normalizedOptions = useMemo(() => {
+    if (!currentQuestion?.options) return [];
+    if (Array.isArray(currentQuestion.options)) {
+      return currentQuestion.options.map((opt, idx) => ({
+        key: ['A', 'B', 'C', 'D'][idx] || String(idx),
+        text: opt,
+      }));
+    }
+    if (currentQuestion.options instanceof Map) {
+      return Array.from(currentQuestion.options.entries()).map(([k, v]) => ({
+        key: k,
+        text: v,
+      }));
+    }
+    return Object.entries(currentQuestion.options).map(([k, v]) => ({
+      key: k,
+      text: v,
+    }));
+  }, [currentQuestion]);
+
+  // ─── Submit Standard Quiz ──────────────────────────────────────────────────
   const handleSubmit = async (isTimeout = false) => {
-    // Module 05: Calculate exact time taken
     const timeTakenSeconds = quizStartTime 
       ? Math.floor((Date.now() - quizStartTime) / 1000)
       : (currentQuiz?.timeLimit * 60) - timeRemaining;
@@ -129,35 +161,34 @@ const QuizPlayPage = () => {
     const result = await submitQuiz(isTimeout, timeTakenSeconds);
     
     if (result.success) {
-      // Module 05: Check for adaptive difficulty adjustment
-      if (result.adaptive && result.adaptive.shouldAdjust) {
-        const notificationType = result.adaptive.newDifficulty === 'hard' ? 'upgraded' : 'downgraded';
-        setAdaptiveNotification({
-          type: notificationType,
-          previousDifficulty: result.adaptive.previousDifficulty,
-          newDifficulty: result.adaptive.newDifficulty,
-          reason: result.adaptive.adjustmentReason
-        });
-        
-        // Show adaptive notification
-        setTimeout(() => {
-          toast.success(
-            notificationType === 'upgraded' 
-              ? '🎉 Great job! Your adaptive difficulty has been upgraded!' 
-              : 'Let\'s build your foundation! Difficulty adjusted for better learning.'
-          );
-        }, 1000);
-      }
-      
-      // Module 06: Show AI feedback notification
-      if (result.aiFeedback && result.aiFeedback.confidenceLevel === 'high') {
-        setTimeout(() => {
-          toast.success('🤖 AI feedback generated successfully!');
-        }, 1500);
-      }
-      
-      navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id));
+      navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id || id));
     }
+  };
+
+  // ─── Submit Adaptive Step (Question-by-Question CAT) ───────────────────────
+  const handleAdaptiveStepSubmit = async () => {
+    if (!selectedAnswer) {
+      toast.error('Please select an option first.');
+      return;
+    }
+
+    const timeSpent = Math.max(1, Math.floor((Date.now() - stepStartTime) / 1000));
+    const result = await submitAdaptiveStep(selectedAnswer, timeSpent);
+
+    if (result.finished) {
+      toast.success('🎉 Adaptive Quiz Completed!');
+      navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id || result.attemptId || id));
+      return;
+    }
+
+    if (result.stepResult) {
+      setStepFeedback(result);
+    }
+  };
+
+  const handleContinueNextAdaptiveQuestion = () => {
+    setStepFeedback(null);
+    setStepStartTime(Date.now());
   };
 
   const confirmSubmit = () => {
@@ -165,10 +196,9 @@ const QuizPlayPage = () => {
     handleSubmit(false);
   };
 
-  // ─── Answer Selection ─────────────────────────────────────────────────────
-  const handleAnswerSelect = (answer) => {
-    if (!currentQuestion) return;
-    selectAnswer(currentQuestion._id, answer);
+  const handleAnswerSelect = (answerKey) => {
+    if (!currentQuestion || (isAdaptiveMode && stepFeedback)) return;
+    selectAnswer(currentQuestion._id, answerKey);
   };
 
   // ─── Loading State ────────────────────────────────────────────────────────
@@ -181,134 +211,131 @@ const QuizPlayPage = () => {
   }
 
   const selectedAnswer = answers[currentQuestion._id];
-  const progress = ((questionIndex + 1) / currentQuiz.questions.length) * 100;
+  const totalQuestionsCount = isAdaptiveMode
+    ? (totalAdaptiveQuestions || currentQuiz.totalQuestions || 10)
+    : (currentQuiz.questions?.length || currentQuiz.totalQuestions || 10);
+  const progress = Math.min(100, ((questionIndex + 1) / totalQuestionsCount) * 100);
   const answeredCount = Object.keys(answers).length;
+  const questionTitle = currentQuestion.questionText || currentQuestion.question;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* ─── Module 05: Sticky Header with Timer ─────────────────────────────── */}
-      <div className="sticky top-16 z-20 mb-6">
+      {/* ─── Sticky Header with Timer & Adaptive Live Bar ────────────────────── */}
+      <div className="sticky top-16 z-20 mb-4 space-y-3">
         <Card padding="md">
-          <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-bold text-dark-50 mb-1">
-              {currentQuiz.title}
-            </h1>
-            <p className="text-sm text-dark-400">
-              Question {questionIndex + 1} of {currentQuiz.questions.length}
-            </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-xl font-bold text-dark-50">
+                  {currentQuiz.title || 'Adaptive Quiz'}
+                </h1>
+                {isAdaptiveMode && (
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                    <Sparkles size={12} /> Adaptive CAT
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-dark-400">
+                Question {questionIndex + 1} of {totalQuestionsCount}
+              </p>
+            </div>
+
+            {/* Quiz Timer */}
+            <QuizTimer 
+              timeRemaining={timeRemaining}
+              totalTime={currentQuiz.timeLimit * 60}
+              onTimeout={() => {
+                if (!autoSubmitted) {
+                  setAutoSubmitted(true);
+                  setShowAutoSubmitModal(true);
+                  setTimeout(() => handleSubmit(true), 2000);
+                }
+              }}
+              difficulty={currentDifficultyLevel || currentQuiz.difficulty}
+            />
           </div>
-          {/* Module 05: Enhanced Quiz Timer with progress bar and auto-submit */}
-          <QuizTimer 
-            timeRemaining={timeRemaining}
-            totalTime={currentQuiz.timeLimit * 60} // Convert minutes to seconds
-            onTimeout={() => {
-              if (!autoSubmitted) {
-                setAutoSubmitted(true);
-                setShowAutoSubmitModal(true);
-                // Auto-submit after showing modal
-                setTimeout(() => {
-                  handleSubmit(true);
-                }, 2000);
-              }
-            }}
-            difficulty={currentQuiz.difficulty}
+
+          {/* Real-Time Live Adaptive Gauge */}
+          {isAdaptiveMode && (
+            <div className="mt-4 pt-4 border-t border-dark-700/60 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-dark-400">Live Difficulty Calibration:</span>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className={cn(
+                    'px-2.5 py-1 rounded-md font-bold transition-all duration-300',
+                    currentDifficultyLevel === 'easy'
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-400/50 scale-105'
+                      : 'bg-dark-800 text-dark-400 border border-dark-700 opacity-60'
+                  )}>
+                    Easy
+                  </span>
+                  <span className="text-dark-600 font-mono">➔</span>
+                  <span className={cn(
+                    'px-2.5 py-1 rounded-md font-bold transition-all duration-300',
+                    currentDifficultyLevel === 'medium'
+                      ? 'bg-yellow-500 text-dark-950 shadow-lg shadow-yellow-500/30 ring-2 ring-yellow-400/50 scale-105'
+                      : 'bg-dark-800 text-dark-400 border border-dark-700 opacity-60'
+                  )}>
+                    Medium ⚡
+                  </span>
+                  <span className="text-dark-600 font-mono">➔</span>
+                  <span className={cn(
+                    'px-2.5 py-1 rounded-md font-bold transition-all duration-300',
+                    currentDifficultyLevel === 'hard'
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 ring-2 ring-red-400/50 scale-105'
+                      : 'bg-dark-800 text-dark-400 border border-dark-700 opacity-60'
+                  )}>
+                    Hard 🔥
+                  </span>
+                </div>
+              </div>
+
+              {/* Streak Counter */}
+              {adaptiveCalibration?.streak > 1 && (
+                <div className="flex items-center gap-1.5 text-xs px-2.5 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full font-semibold">
+                  <Flame size={14} className="animate-bounce" />
+                  <span>{adaptiveCalibration.streak} Streak!</span>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        {/* Progress Bar */}
+        <Card padding="sm">
+          <ProgressBar
+            value={progress}
+            max={100}
+            color={isAdaptiveMode ? 'secondary' : 'primary'}
+            size="md"
+            showLabel={false}
           />
-        </div>
         </Card>
       </div>
 
-      {/* ─── Quiz Content ──────────────────────────────────────────────────── */}
-      <Card padding="md">
-        <ProgressBar
-          value={progress}
-          max={100}
-          color="primary"
-          size="md"
-          showLabel={false}
-        />
-      </Card>
-      </div>
-
-      {/* ─── Quiz Content ──────────────────────────────────────────────────── */}
-      <Card padding="md">
-        {/* Module 04: Difficulty Breakdown Bar */}
-        {currentQuiz.difficultyBreakdown && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-dark-400 font-medium">Difficulty Distribution</span>
-              <div className="flex gap-2 text-xs">
-                <span className="text-emerald-400">Easy: {currentQuiz.difficultyBreakdown.easy}</span>
-                <span className="text-yellow-400">Medium: {currentQuiz.difficultyBreakdown.medium}</span>
-                <span className="text-red-400">Hard: {currentQuiz.difficultyBreakdown.hard}</span>
-              </div>
-            </div>
-            <div className="h-2 bg-dark-700 rounded-full overflow-hidden flex">
-              {currentQuiz.difficultyBreakdown.easy > 0 && (
-                <div 
-                  className="bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${(currentQuiz.difficultyBreakdown.easy / currentQuiz.totalQuestions) * 100}%` }}
-                />
-              )}
-              {currentQuiz.difficultyBreakdown.medium > 0 && (
-                <div 
-                  className="bg-yellow-500 transition-all duration-300"
-                  style={{ width: `${(currentQuiz.difficultyBreakdown.medium / currentQuiz.totalQuestions) * 100}%` }}
-                />
-              )}
-              {currentQuiz.difficultyBreakdown.hard > 0 && (
-                <div 
-                  className="bg-red-500 transition-all duration-300"
-                  style={{ width: `${(currentQuiz.difficultyBreakdown.hard / currentQuiz.totalQuestions) * 100}%` }}
-                />
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Question Progress */}
-        <ProgressBar
-          value={progress}
-          max={100}
-          color="primary"
-          size="md"
-          showLabel={false}
-        />
-      </Card>
-
-      {/* ─── Question Card ────────────────────────────────────────────────── */}
+      {/* ─── Question Card ──────────────────────────────────────────────────── */}
       <AnimatePresence mode="wait">
         <motion.div
-          key={questionIndex}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.2 }}
+          key={currentQuestion._id || questionIndex}
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -15 }}
+          transition={{ duration: 0.25 }}
         >
           <Card padding="lg">
-            {/* Question Text */}
+            {/* Question Header */}
             <div className="mb-6">
               <div className="flex items-start gap-3 mb-4">
-                <span className="flex-shrink-0 w-8 h-8 bg-primary-500/10 rounded-lg
-                                 flex items-center justify-center text-primary-400 font-bold">
+                <span className="flex-shrink-0 w-8 h-8 bg-primary-500/10 rounded-lg flex items-center justify-center text-primary-400 font-bold text-sm">
                   {questionIndex + 1}
                 </span>
                 <h2 className="text-lg font-semibold text-dark-50 leading-relaxed">
-                  {currentQuestion.question}
+                  {questionTitle}
                 </h2>
               </div>
 
-              {currentQuestion.context && (
-                <div className="ml-11 p-3 bg-dark-800/50 rounded-lg border border-dark-700">
-                  <p className="text-sm text-dark-300 italic">
-                    Context: {currentQuestion.context}
-                  </p>
-                </div>
-              )}
-
-              {/* Module 04: Difficulty Classification Badges */}
-              <div className="ml-11 flex flex-wrap items-center gap-2 mt-3">
-                {/* Difficulty Badge */}
+              {/* Badges: Difficulty & Bloom's Taxonomy */}
+              <div className="ml-11 flex flex-wrap items-center gap-2 mt-2">
                 {currentQuestion.difficulty && (
                   <span className={cn(
                     'px-2.5 py-1 rounded-md text-xs font-semibold border',
@@ -318,150 +345,184 @@ const QuizPlayPage = () => {
                   </span>
                 )}
 
-                {/* Bloom's Taxonomy Badge */}
                 {currentQuestion.bloomsTaxonomy && (
                   <span className={cn(
-                    'px-2.5 py-1 rounded-md text-xs font-medium bg-dark-700 border border-dark-600',
+                    'px-2.5 py-1 rounded-md text-xs font-medium bg-dark-700/80 border border-dark-600',
                     getBloomColor(currentQuestion.bloomsTaxonomy)
                   )}>
                     Bloom's: {currentQuestion.bloomsTaxonomy}
                   </span>
                 )}
 
-                {/* Classification Reason Tooltip */}
-                {currentQuestion.classificationReason && (
-                  <div className="relative">
-                    <button
-                      className="p-1.5 rounded-md bg-dark-700 border border-dark-600 hover:bg-dark-600 transition-colors"
-                      onMouseEnter={() => setShowTooltip(true)}
-                      onMouseLeave={() => setShowTooltip(false)}
-                    >
-                      <Info size={14} className="text-dark-400" />
-                    </button>
-                    {showTooltip && (
-                      <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-10">
-                        <p className="text-xs text-dark-200 leading-relaxed">
-                          <span className="font-semibold text-dark-400">Classification:</span> {currentQuestion.classificationReason}
-                        </p>
-                        <div className="absolute bottom-0 left-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-dark-800 border-r border-b border-dark-600"></div>
-                      </div>
-                    )}
-                  </div>
+                {currentQuestion.topic && (
+                  <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-dark-800 text-dark-300 border border-dark-700">
+                    Topic: {currentQuestion.topic}
+                  </span>
                 )}
               </div>
             </div>
 
             {/* Answer Options */}
             <div className="space-y-3">
-              {currentQuestion.type === 'mcq' ? (
-                // MCQ Options
-                currentQuestion.options.map((option, index) => {
-                  const optionLabel = ['A', 'B', 'C', 'D'][index];
-                  const isSelected = selectedAnswer === option;
+              {normalizedOptions.map((opt) => {
+                const isSelected = selectedAnswer === opt.key || selectedAnswer === opt.text;
+                const isCorrectOption = stepFeedback && (opt.key === stepFeedback.stepResult?.correctAnswer || opt.text === stepFeedback.stepResult?.correctAnswer);
+                const isWrongSelection = stepFeedback && isSelected && !stepFeedback.stepResult?.isCorrect;
 
-                  return (
-                    <button
-                      key={index}
-                      onClick={() => handleAnswerSelect(option)}
-                      className={cn(
-                        'quiz-option w-full',
-                        isSelected && 'selected'
-                      )}
-                    >
-                      <span className={cn(
-                        'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
-                        'font-bold text-sm transition-colors',
-                        isSelected
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-dark-700 text-dark-400'
-                      )}>
-                        {optionLabel}
-                      </span>
-                      <span className="flex-1 text-left text-dark-100">
-                        {option}
-                      </span>
-                      {isSelected && (
-                        <CheckCircle size={20} className="text-primary-400" />
-                      )}
-                    </button>
-                  );
-                })
-              ) : (
-                // True/False Options
-                ['True', 'False'].map((option) => {
-                  const isSelected = selectedAnswer === option;
-                  return (
-                    <button
-                      key={option}
-                      onClick={() => handleAnswerSelect(option)}
-                      className={cn(
-                        'quiz-option w-full',
-                        isSelected && 'selected'
-                      )}
-                    >
-                      <span className={cn(
-                        'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
-                        'font-bold text-sm transition-colors',
-                        isSelected
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-dark-700 text-dark-400'
-                      )}>
-                        {option === 'True' ? '✓' : '✗'}
-                      </span>
-                      <span className="flex-1 text-left text-dark-100">
-                        {option}
-                      </span>
-                      {isSelected && (
-                        <CheckCircle size={20} className="text-primary-400" />
-                      )}
-                    </button>
-                  );
-                })
-              )}
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    disabled={isSubmittingStep || Boolean(stepFeedback)}
+                    onClick={() => handleAnswerSelect(opt.key)}
+                    className={cn(
+                      'quiz-option w-full text-left transition-all p-3.5 rounded-xl border flex items-center gap-3',
+                      stepFeedback
+                        ? isCorrectOption
+                          ? 'bg-emerald-500/15 border-emerald-500 text-emerald-200'
+                          : isWrongSelection
+                            ? 'bg-red-500/15 border-red-500 text-red-200'
+                            : 'bg-dark-800/40 border-dark-700 text-dark-400 opacity-60'
+                        : isSelected
+                          ? 'bg-primary-500/20 border-primary-500 text-primary-100 ring-2 ring-primary-500/30'
+                          : 'bg-dark-800/60 border-dark-700 hover:border-dark-600 text-dark-100'
+                    )}
+                  >
+                    <span className={cn(
+                      'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-colors',
+                      stepFeedback
+                        ? isCorrectOption
+                          ? 'bg-emerald-500 text-white'
+                          : isWrongSelection
+                            ? 'bg-red-500 text-white'
+                            : 'bg-dark-700 text-dark-400'
+                        : isSelected
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-dark-700 text-dark-300'
+                    )}>
+                      {opt.key}
+                    </span>
+                    <span className="flex-1 text-sm font-medium">
+                      {opt.text}
+                    </span>
+                    {stepFeedback && isCorrectOption && (
+                      <CheckCircle size={20} className="text-emerald-400 flex-shrink-0" />
+                    )}
+                    {stepFeedback && isWrongSelection && (
+                      <XCircle size={20} className="text-red-400 flex-shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Micro-Feedback Card for Adaptive Step */}
+            {isAdaptiveMode && stepFeedback && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className={cn(
+                  'mt-5 p-4 rounded-xl border',
+                  stepFeedback.stepResult?.isCorrect
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  {stepFeedback.stepResult?.isCorrect ? (
+                    <CheckCircle className="text-emerald-400 mt-0.5 flex-shrink-0" size={20} />
+                  ) : (
+                    <XCircle className="text-red-400 mt-0.5 flex-shrink-0" size={20} />
+                  )}
+                  <div className="space-y-1.5 text-sm">
+                    <p className="font-semibold text-base">
+                      {stepFeedback.stepResult?.isCorrect ? 'Correct Answer!' : 'Incorrect Answer'}
+                    </p>
+                    {stepFeedback.stepResult?.explanation && (
+                      <p className="text-dark-200 text-xs leading-relaxed">
+                        <span className="font-medium text-dark-300">Explanation:</span> {stepFeedback.stepResult.explanation}
+                      </p>
+                    )}
+                    {stepFeedback.calibration?.reason && (
+                      <div className="flex items-center gap-2 pt-1 text-xs font-medium text-purple-300">
+                        <Sparkles size={14} />
+                        <span>{stepFeedback.calibration.reason}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </Card>
         </motion.div>
       </AnimatePresence>
 
-      {/* ─── Navigation ───────────────────────────────────────────────────── */}
+      {/* ─── Bottom Navigation / Action Bar ──────────────────────────────────── */}
       <Card padding="md">
-        <div className="flex items-center justify-between">
-          {/* Previous */}
-          <Button
-            variant="secondary"
-            onClick={previousQuestion}
-            disabled={questionIndex === 0}
-            leftIcon={<ChevronLeft size={18} />}
-          >
-            Previous
-          </Button>
+        {isAdaptiveMode ? (
+          /* Adaptive Mode Action Button */
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-dark-400">
+              Question {questionIndex + 1} of {totalQuestionsCount}
+            </div>
 
-          {/* Status */}
-          <div className="text-center">
-            <p className="text-sm text-dark-400">
-              Answered: {answeredCount} / {currentQuiz.questions.length}
-            </p>
+            {!stepFeedback ? (
+              <Button
+                variant="primary"
+                onClick={handleAdaptiveStepSubmit}
+                isLoading={isSubmittingStep}
+                disabled={!selectedAnswer}
+                rightIcon={<ArrowRight size={18} />}
+              >
+                Submit Answer
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={handleContinueNextAdaptiveQuestion}
+                rightIcon={<ArrowRight size={18} />}
+              >
+                Continue to Next Question
+              </Button>
+            )}
           </div>
+        ) : (
+          /* Standard Quiz Mode Navigation */
+          <div className="flex items-center justify-between">
+            <Button
+              variant="secondary"
+              onClick={previousQuestion}
+              disabled={questionIndex === 0}
+              leftIcon={<ChevronLeft size={18} />}
+            >
+              Previous
+            </Button>
 
-          {/* Next or Submit */}
-          {questionIndex < currentQuiz.questions.length - 1 ? (
-            <Button
-              variant="primary"
-              onClick={nextQuestion}
-              rightIcon={<ChevronRight size={18} />}
-            >
-              Next
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              onClick={() => setShowSubmitModal(true)}
-              leftIcon={<Flag size={18} />}
-            >
-              Submit Quiz
-            </Button>
-          )}
-        </div>
+            <div className="text-center">
+              <p className="text-sm text-dark-400">
+                Answered: {answeredCount} / {currentQuiz.questions?.length || totalQuestionsCount}
+              </p>
+            </div>
+
+            {questionIndex < (currentQuiz.questions?.length || 10) - 1 ? (
+              <Button
+                variant="primary"
+                onClick={nextQuestion}
+                rightIcon={<ChevronRight size={18} />}
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={() => setShowSubmitModal(true)}
+                leftIcon={<Flag size={18} />}
+              >
+                Submit Quiz
+              </Button>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* ─── Submit Confirmation Modal ────────────────────────────────────── */}
@@ -478,8 +539,8 @@ const QuizPlayPage = () => {
               <div className="text-sm text-dark-300">
                 <p className="font-semibold mb-1">Are you sure?</p>
                 <p>
-                  You have answered {answeredCount} out of {currentQuiz.questions.length} questions.
-                  {answeredCount < currentQuiz.questions.length && (
+                  You have answered {answeredCount} out of {currentQuiz.questions?.length || 10} questions.
+                  {answeredCount < (currentQuiz.questions?.length || 10) && (
                     <span className="text-accent-400">
                       {' '}Unanswered questions will be marked as incorrect.
                     </span>
@@ -509,7 +570,7 @@ const QuizPlayPage = () => {
         </div>
       </Modal>
 
-      {/* ─── Auto-Submit Modal - Module 05 ─────────────────────────────────────────── */}
+      {/* ─── Auto-Submit Modal on Timeout ─────────────────────────────────── */}
       <Modal
         isOpen={showAutoSubmitModal}
         onClose={() => setShowAutoSubmitModal(false)}
@@ -535,8 +596,7 @@ const QuizPlayPage = () => {
               className="flex-1"
               onClick={() => {
                 setShowAutoSubmitModal(false);
-                // Navigate to results after closing modal
-                navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id));
+                navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id || id));
               }}
             >
               View Results
