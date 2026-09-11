@@ -17,6 +17,7 @@ import AdaptiveBadge from '../../components/quiz/AdaptiveBadge.jsx';
 import AIFeedback from '../../components/quiz/AIFeedback.jsx';
 import { formatDuration, formatScore } from '../../utils/formatters.js';
 import { cn } from '../../utils/helpers.js';
+import { useNotificationStore } from '../../store/notification.store.js';
 import toast from 'react-hot-toast';
 
 /**
@@ -83,6 +84,13 @@ const QuizResultPage = () => {
     if (result.adaptive && result.adaptive.shouldAdjust) {
       setAdaptiveInfo(result.adaptive);
       setShowAdaptiveNotification(true);
+
+      useNotificationStore.getState().addNotification({
+        type: 'adaptive',
+        title: `Difficulty ${result.adaptive.adjustment === 'upgraded' ? 'Upgraded 🚀' : 'Calibrated'}`,
+        message: result.adaptive.message || `Your difficulty level was updated to ${result.adaptive.newDifficulty || 'next level'}.`,
+        link: ROUTES.QUIZ_HISTORY,
+      });
     }
     
     // Module 06: Check for AI feedback

@@ -11,6 +11,7 @@ import { useTheme } from '../../hooks/useTheme.js';
 import { ROUTES } from '../../constants/routes.js';
 import { formatNumber } from '../../utils/formatters.js';
 import Avatar from '../common/Avatar.jsx';
+import NotificationDropdown from './NotificationDropdown.jsx';
 
 /**
  * @component Navbar
@@ -88,12 +89,7 @@ const Navbar = () => {
       )}
 
       {/* Notifications */}
-      <button className={`relative p-2 rounded-xl ${isDark ? 'text-dark-400 hover:text-dark-100 hover:bg-dark-800' : 'text-light-600 hover:text-light-900 hover:bg-light-200'}
-                         transition-colors`}>
-        <Bell size={20} />
-        <span className="absolute top-1.5 right-1.5 w-2 h-2
-                         bg-primary-500 rounded-full" />
-      </button>
+      <NotificationDropdown />
 
       {/* Settings */}
       <Link
