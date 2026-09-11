@@ -416,5 +416,5 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 ---
 
 <div align="center">
-  <sub>Built with "PROJECT V" by the QuizMaster AI Team</sub>
+  <sub>Built with "PROJECT V" by the QuizMaster Team</sub>
 </div>
