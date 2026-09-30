@@ -6,14 +6,14 @@ import axiosInstance from './axios.instance.js';
  */
 export const gamificationAPI = {
   getProfile: () =>
-    axiosInstance.get('/api/v1/gamification/profile/me'),
+    axiosInstance.get('/gamification/profile/me'),
 
   getBadges: () =>
-    axiosInstance.get('/api/v1/gamification/badges/me'),
+    axiosInstance.get('/gamification/badges/me'),
 
   getLeaderboard: (params) =>
-    axiosInstance.get('/api/v1/gamification/leaderboard', { params }),
+    axiosInstance.get('/gamification/leaderboard', { params }),
 
   getStats: () =>
-    axiosInstance.get('/api/v1/results/analytics/me'),
+    axiosInstance.get('/results/analytics/me'),
 };

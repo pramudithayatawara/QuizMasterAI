@@ -15,7 +15,7 @@ import Button from '../../components/common/Button.jsx';
 import Input from '../../components/common/Input.jsx';
 import Spinner from '../../components/common/Spinner.jsx';
 import EmptyState from '../../components/common/EmptyState.jsx';
-import { cn } from '../../utils/helpers.js';
+import { cn, normalizePath } from '../../utils/helpers.js';
 import toast from 'react-hot-toast';
 
 /**
@@ -35,7 +35,7 @@ const CreateQuizPage = () => {
   // State for quiz configuration
   const [quizConfig, setQuizConfig] = useState({
     title: '',
-    difficulty: 'medium',
+    difficulty: 'random',
     questionCount: 10,
     timeLimit: 20,
     adaptiveMode: false,
@@ -68,14 +68,27 @@ const CreateQuizPage = () => {
           }
         }
         
-        console.log('Extracted PDF Array:', pdfArray);
-        setPdfs(pdfArray);
+        // Normalize PDF fields to match backend response
+        const normalizedPdfs = pdfArray.map(pdf => ({
+          _id: pdf._id || pdf.id,
+          id: pdf.id || pdf._id,
+          originalName: pdf.originalName || pdf.original_name || pdf.name,
+          name: pdf.name || pdf.original_name || pdf.originalName,
+          fileSize: pdf.fileSize || pdf.file_size,
+          chunkCount: pdf.chunkCount || pdf.chunk_count || 0,
+          status: pdf.status || 'completed',
+          createdAt: pdf.createdAt || pdf.created_at,
+          filePath: pdf.filePath || pdf.file_path,
+        }));
+        
+        console.log('Extracted PDF Array:', normalizedPdfs);
+        setPdfs(normalizedPdfs);
         setPdfError(null);
       } catch (error) {
-        toast.error('Failed to load PDFs.');
         console.error('PDF fetch error:', error);
         setPdfs([]); // Set empty array on error
-        setPdfError(error.message || 'Failed to load PDFs');
+        setPdfError(error.response?.data?.detail || error.message || 'Failed to load PDFs');
+        toast.error('Failed to load PDFs. Please try again.');
       } finally {
         setIsLoadingPdfs(false);
       }
@@ -83,6 +96,56 @@ const CreateQuizPage = () => {
     
     fetchPdfs();
   }, []); // Load PDFs only on mount
+  
+  // Retry PDF fetch
+  const handleRetryPdfs = () => {
+    const fetchPdfs = async () => {
+      setIsLoadingPdfs(true);
+      setPdfError(null);
+      try {
+        const response = await pdfAPI.getAll();
+        console.log('PDF API Response:', response);
+        
+        let pdfArray = [];
+        if (response?.data) {
+          if (Array.isArray(response.data)) {
+            pdfArray = response.data;
+          } else if (response.data.data && Array.isArray(response.data.data)) {
+            pdfArray = response.data.data;
+          } else if (response.data.data?.pdfs && Array.isArray(response.data.data.pdfs)) {
+            pdfArray = response.data.data.pdfs;
+          } else if (response.data.pdfs && Array.isArray(response.data.pdfs)) {
+            pdfArray = response.data.pdfs;
+          }
+        }
+        
+        const normalizedPdfs = pdfArray.map(pdf => ({
+          _id: pdf._id || pdf.id,
+          id: pdf.id || pdf._id,
+          originalName: pdf.originalName || pdf.original_name || pdf.name,
+          name: pdf.name || pdf.original_name || pdf.originalName,
+          fileSize: pdf.fileSize || pdf.file_size,
+          chunkCount: pdf.chunkCount || pdf.chunk_count || 0,
+          status: pdf.status || 'completed',
+          createdAt: pdf.createdAt || pdf.created_at,
+          filePath: pdf.filePath || pdf.file_path,
+        }));
+        
+        console.log('Extracted PDF Array:', normalizedPdfs);
+        setPdfs(normalizedPdfs);
+        setPdfError(null);
+      } catch (error) {
+        console.error('PDF fetch error:', error);
+        setPdfs([]);
+        setPdfError(error.response?.data?.detail || error.message || 'Failed to load PDFs');
+        toast.error('Failed to load PDFs. Please try again.');
+      } finally {
+        setIsLoadingPdfs(false);
+      }
+    };
+    
+    fetchPdfs();
+  };
   
   // Auto-fill title when PDF is selected
   useEffect(() => {
@@ -143,7 +206,7 @@ const CreateQuizPage = () => {
       
       // Call API
       const response = await quizAPI.generateQuiz({
-        pdfId: selectedPdf?._id,
+        pdfId: selectedPdf?._id || selectedPdf?.id,
         title: quizConfig.title,
         difficulty: quizConfig.difficulty,
         questionCount: quizConfig.questionCount,
@@ -160,7 +223,7 @@ const CreateQuizPage = () => {
       setTimeout(() => {
         const quizId = response?.data?.data?.quiz?._id || response?.data?.quiz?._id || response?.data?.data?.id;
         if (quizId) {
-          navigate(ROUTES.QUIZ_PLAY.replace(':id', quizId));
+          navigate(normalizePath(ROUTES.QUIZ_PLAY.replace(':id', quizId)));
         } else {
           toast.error('Failed to navigate to quiz. Please try again.');
           setIsGenerating(false);
@@ -178,7 +241,7 @@ const CreateQuizPage = () => {
   };
   
   const filteredPdfs = (pdfs || []).filter(pdf =>
-    pdf?.originalName?.toLowerCase().includes(pdfSearchQuery.toLowerCase())
+    (pdf?.originalName || pdf?.name || '')?.toLowerCase().includes(pdfSearchQuery.toLowerCase())
   );
   
   return (
@@ -246,7 +309,7 @@ const CreateQuizPage = () => {
                       variant="primary"
                       size="sm"
                       leftIcon={<Loader2 size={18} className="animate-spin" />}
-                      onClick={() => window.location.reload()}
+                      onClick={handleRetryPdfs}
                     >
                       Retry
                     </Button>
@@ -270,13 +333,13 @@ const CreateQuizPage = () => {
               ) : (
                 filteredPdfs.map((pdf) => (
                   <motion.div
-                    key={pdf._id || Math.random()}
+                    key={pdf._id || pdf.id || Math.random()}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     onClick={() => handlePdfSelect(pdf)}
                     className={cn(
                       'p-4 rounded-xl border cursor-pointer transition-all',
-                      selectedPdf?._id === pdf._id
+                      (selectedPdf?._id === pdf._id || selectedPdf?.id === pdf.id)
                         ? 'bg-primary-500/10 border-primary-500/50'
                         : 'bg-dark-800/40 border-dark-700 hover:border-primary-500/30 hover:bg-dark-800/60'
                     )}
@@ -284,20 +347,20 @@ const CreateQuizPage = () => {
                     <div className="flex items-start gap-3">
                       <div className={cn(
                         'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
-                        selectedPdf?._id === pdf._id
+                        (selectedPdf?._id === pdf._id || selectedPdf?.id === pdf.id)
                           ? 'bg-primary-500/20'
                           : 'bg-dark-700'
                       )}>
                         <FileText size={18} className={cn(
-                          selectedPdf?._id === pdf._id ? 'text-primary-400' : 'text-dark-400'
+                          (selectedPdf?._id === pdf._id || selectedPdf?.id === pdf.id) ? 'text-primary-400' : 'text-dark-400'
                         )} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className={cn(
                           'font-medium truncate',
-                          selectedPdf?._id === pdf._id ? 'text-primary-400' : 'text-dark-200'
+                          (selectedPdf?._id === pdf._id || selectedPdf?.id === pdf.id) ? 'text-primary-400' : 'text-dark-200'
                         )}>
-                          {pdf.originalName || 'Untitled PDF'}
+                          {pdf.originalName || pdf.name || 'Untitled PDF'}
                         </h4>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-dark-400">
@@ -311,7 +374,7 @@ const CreateQuizPage = () => {
                           )}
                         </div>
                       </div>
-                      {selectedPdf?._id === pdf._id && (
+                      {(selectedPdf?._id === pdf._id || selectedPdf?.id === pdf.id) && (
                         <CheckCircle size={20} className="text-primary-400 flex-shrink-0" />
                       )}
                     </div>
@@ -358,7 +421,7 @@ const CreateQuizPage = () => {
                 <label className="block text-sm font-medium text-dark-300 mb-2">
                   Target Difficulty
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {Object.entries(DIFFICULTY_CONFIG || {}).map(([key, config]) => (
                     <button
                       key={key}
@@ -367,7 +430,7 @@ const CreateQuizPage = () => {
                       className={cn(
                         'p-3 rounded-xl border transition-all text-center',
                         quizConfig.difficulty === key
-                          ? (config.bgClass || 'bg-primary-500/10') + ' ' + (config.textClass || 'text-primary-400') + ' ' + (config.borderClass || 'border-primary-500/50')
+                          ? (config.bgColor || config.bgClass || 'bg-primary-500/10') + ' ' + (config.color || config.textClass || 'text-primary-400') + ' ' + (config.border || config.borderClass || 'border-primary-500/50')
                           : 'bg-dark-800/40 border-dark-700 text-dark-400 hover:border-dark-600'
                       )}
                     >

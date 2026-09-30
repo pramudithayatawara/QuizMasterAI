@@ -25,6 +25,7 @@ export const ROUTES = {
   QUIZ_PLAY:       '/quizzes/:id/play',
   QUIZ_RESULT:     '/quizzes/:id/result',
   QUIZ_HISTORY:    '/quizzes/history',
+  QUIZ_AI_GENERATE: '/quizzes/ai-generate',
 
   // Battle
   BATTLE_LOBBY:    '/battle',
@@ -37,6 +38,8 @@ export const ROUTES = {
   ADMIN:           '/admin',
   ADMIN_USERS:     '/admin/users',
   ADMIN_BATTLES:   '/admin/battles',
+  ADMIN_QUIZZES:   '/admin/quizzes',
+  ADMIN_PDFS:      '/admin/pdfs',
 
   // Not Found
   NOT_FOUND:       '*',

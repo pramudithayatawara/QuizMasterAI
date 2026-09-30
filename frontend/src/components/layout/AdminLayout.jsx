@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet, Link, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Swords,
-  Brain, Settings, ArrowLeft,
+  Brain, Settings, ArrowLeft, FileText, Shield
 } from 'lucide-react';
 import { ROUTES } from '../../constants/routes.js';
 import { cn } from '../../utils/helpers.js';
@@ -11,7 +11,9 @@ import Navbar from './Navbar.jsx';
 const ADMIN_NAV = [
   { label: 'Dashboard', icon: LayoutDashboard, path: ROUTES.ADMIN },
   { label: 'Users',     icon: Users,           path: ROUTES.ADMIN_USERS },
+  { label: 'Quizzes',   icon: Brain,           path: ROUTES.ADMIN_QUIZZES },
   { label: 'Battles',   icon: Swords,          path: ROUTES.ADMIN_BATTLES },
+  { label: 'PDFs',      icon: FileText,        path: ROUTES.ADMIN_PDFS },
 ];
 
 /**

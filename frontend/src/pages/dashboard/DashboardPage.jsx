@@ -14,7 +14,7 @@ import Card from '../../components/common/Card.jsx';
 import ProgressBar from '../../components/common/ProgressBar.jsx';
 import Spinner from '../../components/common/Spinner.jsx';
 import { formatRelativeTime, formatScore } from '../../utils/formatters.js';
-import { getLevelProgress, getRankMedal } from '../../utils/helpers.js';
+import { getLevelProgress, getRankMedal, normalizePath } from '../../utils/helpers.js';
 
 /**
  * @page DashboardPage
@@ -269,7 +269,7 @@ const DashboardPage = () => {
         ) : (
           <div className="space-y-3">
             {recentQuizzes.map((quiz) => (
-              <Link key={quiz._id} to={ROUTES.QUIZ_PLAY.replace(':id', quiz._id)}>
+              <Link key={quiz._id} to={normalizePath(ROUTES.QUIZ_PLAY.replace(':id', quiz._id))}>
                 <Card
                   hover
                   padding="sm"

@@ -27,6 +27,7 @@ const CreateQuizPage       = lazy(() => import('../pages/quiz/CreateQuizPage.jsx
 const QuizPlayPage         = lazy(() => import('../pages/quiz/QuizPlayPage.jsx'));
 const QuizResultPage       = lazy(() => import('../pages/quiz/QuizResultPage.jsx'));
 const QuizHistoryPage      = lazy(() => import('../pages/quiz/QuizHistoryPage.jsx'));
+const AIQuizGenerationPage = lazy(() => import('../pages/quiz/AIQuizGenerationPage.jsx'));
 
 const BattleLobbyPage      = lazy(() => import('../pages/battle/BattleLobbyPage.jsx'));
 const BattlePlayPage       = lazy(() => import('../pages/battle/BattlePlayPage.jsx'));
@@ -36,6 +37,8 @@ const GamificationPage     = lazy(() => import('../pages/gamification/Gamificati
 const AdminDashboardPage   = lazy(() => import('../pages/admin/AdminDashboardPage.jsx'));
 const AdminUsersPage       = lazy(() => import('../pages/admin/AdminUsersPage.jsx'));
 const AdminBattlesPage     = lazy(() => import('../pages/admin/AdminBattlesPage.jsx'));
+const AdminQuizzesPage     = lazy(() => import('../pages/admin/AdminQuizzesPage.jsx'));
+const AdminPDFsPage        = lazy(() => import('../pages/admin/AdminPDFsPage.jsx'));
 
 const NotFoundPage         = lazy(() => import('../pages/NotFoundPage.jsx'));
 
@@ -75,11 +78,12 @@ const AppRoutes = () => (
           <Route path={ROUTES.PDF_MANAGER}  element={<PDFManagerPage />} />
           <Route path={ROUTES.PDF_LIST}     element={<PDFManagerPage />} />
           <Route path={ROUTES.PDF_DETAIL}   element={<PDFDetailPage />} />
-          <Route path={ROUTES.QUIZ_LIST}    element={<QuizListPage />} />
-          <Route path={ROUTES.QUIZ_CREATE}  element={<CreateQuizPage />} />
-          <Route path={ROUTES.QUIZ_HISTORY} element={<QuizHistoryPage />} />
-          <Route path={ROUTES.QUIZ_PLAY}    element={<QuizPlayPage />} />
-          <Route path={ROUTES.QUIZ_RESULT}  element={<QuizResultPage />} />
+          <Route path={ROUTES.QUIZ_LIST}        element={<QuizListPage />} />
+          <Route path={ROUTES.QUIZ_CREATE}      element={<CreateQuizPage />} />
+          <Route path={ROUTES.QUIZ_HISTORY}     element={<QuizHistoryPage />} />
+          <Route path={ROUTES.QUIZ_AI_GENERATE} element={<AIQuizGenerationPage />} />
+          <Route path={ROUTES.QUIZ_PLAY}        element={<QuizPlayPage />} />
+          <Route path={ROUTES.QUIZ_RESULT}      element={<QuizResultPage />} />
           <Route path={ROUTES.BATTLE_LOBBY} element={<BattleLobbyPage />} />
           <Route path={ROUTES.BATTLE_PLAY}  element={<BattlePlayPage />} />
           <Route path={ROUTES.GAMIFICATION} element={<GamificationPage />} />
@@ -91,7 +95,9 @@ const AppRoutes = () => (
         <Route element={<AdminLayout />}>
           <Route path={ROUTES.ADMIN}         element={<AdminDashboardPage />} />
           <Route path={ROUTES.ADMIN_USERS}   element={<AdminUsersPage />} />
+          <Route path={ROUTES.ADMIN_QUIZZES} element={<AdminQuizzesPage />} />
           <Route path={ROUTES.ADMIN_BATTLES} element={<AdminBattlesPage />} />
+          <Route path={ROUTES.ADMIN_PDFS}    element={<AdminPDFsPage />} />
         </Route>
       </Route>
 

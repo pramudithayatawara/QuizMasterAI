@@ -231,6 +231,14 @@
     @apply border-red-500 bg-red-500/20;
   }
 
+  html.dark .quiz-option.correct-reveal {
+    @apply border-secondary-500 bg-secondary-500/20;
+  }
+
+  html.dark .quiz-option.disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
   /* Quiz option - Light theme */
   html.light .quiz-option {
     @apply w-full flex items-center gap-4 p-4 rounded-xl border-2
@@ -249,6 +257,14 @@
 
   html.light .quiz-option.incorrect {
     @apply border-red-500 bg-red-500/20;
+  }
+
+  html.light .quiz-option.correct-reveal {
+    @apply border-secondary-500 bg-secondary-500/20;
+  }
+
+  html.light .quiz-option.disabled {
+    @apply opacity-50 cursor-not-allowed;
   }
 
   /* Stat card styles removed to avoid circular dependency - defined inline in components */

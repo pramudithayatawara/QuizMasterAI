@@ -54,21 +54,25 @@ const RegisterForm = () => {
     setError(null);
 
     try {
-      // Backend authValidator එකට අවශ්‍ය සියලුම data (confirmPassword ඇතුළුව) යවයි
-      await authAPI.register(data);
+      // Generate username from firstName and lastName (lowercase, no spaces)
+      const { confirmPassword, firstName, lastName, email, password } = data;
+      const username = `${firstName.toLowerCase()}${lastName.toLowerCase()}`;
+
+      // Prepare registration data with username (backend requires username, email, password)
+      const registerData = {
+        username,
+        email,
+        password,
+      };
+
+      await authAPI.register(registerData);
 
       // Registration සාර්ථක වූ පසු Login Page එකට Redirect කරයි
       navigate('/login');
     } catch (err) {
-      // Backend එකෙන් එන Exact Error message (Array එකේ පළමු එක) UI එකට පෙන්වීම
-      const backendErrors = err.response?.data?.errors;
-      if (backendErrors && backendErrors.length > 0) {
-        setError(backendErrors[0].message);
-      } else {
-        setError(
-          err.response?.data?.message || err.message || 'Registration failed. Please try again.'
-        );
-      }
+      // Backend එකෙන් එන Exact Error message
+      const message = err.response?.data?.detail || err.message || 'Registration failed. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Brain, Loader2, CheckCircle, XCircle, ChevronDown, ChevronUp,
-  FileText, Clock, Eye, AlertCircle, Play, RotateCcw, Info
+  FileText, Clock, Eye, AlertCircle, Play, RotateCcw, Info, Zap
 } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme.js';
 import { quizAPI } from '../../api/quiz.api.js';
+import { ROUTES } from '../../constants/routes.js';
 import toast from 'react-hot-toast';
 import { cn } from '../../utils/helpers.js';
 
@@ -14,6 +16,7 @@ import { cn } from '../../utils/helpers.js';
  * @description Display generated quiz with questions, options, and context references.
  */
 const QuizView = ({ quizId, pdfId, onClose }) => {
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   
@@ -78,14 +81,31 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
           quizData = response.data.data.quiz;
         } else if (response.data.quiz) {
           quizData = response.data.quiz;
-        } else if (response.data.data) {
+        } else if (response.data.data && typeof response.data.data === 'object' && !Array.isArray(response.data.data)) {
           quizData = response.data.data;
-        } else if (typeof response.data === 'object' && response.data._id) {
+        } else if (typeof response.data === 'object' && (response.data.id || response.data._id || response.data.title)) {
           quizData = response.data;
         }
       }
       
-      console.log('Extracted Quiz Data:', quizData);
+      if (quizData && Array.isArray(quizData.questions)) {
+        quizData.questions = quizData.questions.map((q, idx) => ({
+          ...q,
+          _id: q._id || String(q.id || idx + 1),
+          id: q.id || q._id || idx + 1,
+          question: q.question || q.question_text || q.questionText || 'Quiz Question',
+          questionText: q.questionText || q.question_text || q.question || 'Quiz Question',
+          correctAnswer: q.correctAnswer || q.correct_answer || '',
+          options: Array.isArray(q.options) ? q.options : [],
+          type: q.type || q.question_type || 'mcq',
+          difficulty: q.difficulty || 'medium',
+          explanation: q.explanation || ''
+        }));
+        quizData.totalQuestions = quizData.totalQuestions || quizData.total_questions || quizData.questions.length;
+        quizData.timeLimit = quizData.timeLimit || quizData.time_limit || Math.max(2, Math.round(quizData.questions.length * 1.5));
+      }
+
+      console.log('Extracted & Normalized Quiz Data:', quizData);
       setQuiz(quizData);
     } catch (error) {
       console.error('Quiz fetch error:', error);
@@ -175,12 +195,12 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
   };
 
   const getScore = () => {
-    if (!quiz?.questions || !showResults) return { correct: 0, total: 0, percentage: 0 };
+    if (!quiz?.questions || !showResults) return { correct: 0, total: 0, totalQuestions: 0, percentage: 0 };
     
     let correct = 0;
-    quiz.questions.forEach((question, index) => {
+    quiz.questions.forEach((question) => {
       const userAnswer = selectedAnswers[question._id];
-      if (userAnswer === question.correctAnswer) {
+      if (userAnswer && (userAnswer === question.correctAnswer || String(userAnswer).toLowerCase() === String(question.correctAnswer).toLowerCase())) {
         correct++;
       }
     });
@@ -188,6 +208,7 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
     return {
       correct,
       total: quiz.questions.length,
+      totalQuestions: quiz.questions.length,
       percentage: quiz.questions.length > 0 ? Math.round((correct / quiz.questions.length) * 100) : 0
     };
   };
@@ -522,14 +543,27 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
               {/* Options */}
               <div className="mt-4 space-y-2">
                 {(() => {
-                  // Handle different option formats (Map vs Object)
-                  const optionsEntries = question.options instanceof Map 
-                    ? Array.from(question.options.entries())
-                    : Object.entries(question.options || {});
+                  let optionsList = [];
+                  if (Array.isArray(question.options)) {
+                    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+                    optionsList = question.options.map((opt, i) => ({
+                      key: letters[i] || String(i + 1),
+                      val: typeof opt === 'string' ? opt : (opt?.text || opt?.label || String(opt)),
+                      raw: opt
+                    }));
+                  } else if (question.options instanceof Map) {
+                    optionsList = Array.from(question.options.entries()).map(([k, v]) => ({ key: k, val: v, raw: v }));
+                  } else if (typeof question.options === 'object' && question.options !== null) {
+                    optionsList = Object.entries(question.options).map(([k, v]) => ({ key: k, val: v, raw: v }));
+                  }
                   
-                  return optionsEntries.map(([key, option]) => {
-                    const isSelected = userAnswer === key;
-                    const isCorrectOption = key === question.correctAnswer;
+                  return optionsList.map(({ key, val }) => {
+                    const isSelected = userAnswer === key || userAnswer === val;
+                    const isCorrectOption = (
+                      question.correctAnswer === key ||
+                      question.correctAnswer === val ||
+                      String(question.correctAnswer).trim().toLowerCase() === String(val).trim().toLowerCase()
+                    );
                     
                     let optionClassName = '';
                     let icon = null;
@@ -543,33 +577,33 @@ const QuizView = ({ quizId, pdfId, onClose }) => {
                       // Results mode - show correct/incorrect
                       if (isCorrectOption) {
                         optionClassName = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
-                      icon = <CheckCircle size={16} />;
-                    } else if (isSelected && !isCorrectOption) {
-                      optionClassName = 'bg-red-500/20 border-red-500/50 text-red-400';
-                      icon = <XCircle size={16} />;
+                        icon = <CheckCircle size={16} />;
+                      } else if (isSelected && !isCorrectOption) {
+                        optionClassName = 'bg-red-500/20 border-red-500/50 text-red-400';
+                        icon = <XCircle size={16} />;
+                      } else {
+                        optionClassName = `${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-light-200 border-light-300'} ${isDark ? 'text-slate-400' : 'text-light-600'}`;
+                      }
                     } else {
-                      optionClassName = `${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-light-200 border-light-300'} ${isDark ? 'text-slate-400' : 'text-light-600'}`;
+                      // Preview mode - show correct answer
+                      optionClassName = isCorrectOption
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 font-medium'
+                        : `${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-light-200 border-light-300'} ${isDark ? 'text-slate-400' : 'text-light-600'}`;
+                      if (isCorrectOption) icon = <CheckCircle size={16} className="text-emerald-400" />;
                     }
-                  } else {
-                    // Preview mode - show correct answer
-                    optionClassName = isCorrectOption
-                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                      : `${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-light-200 border-light-300'} ${isDark ? 'text-slate-400' : 'text-light-600'}`;
-                    if (isCorrectOption) icon = <CheckCircle size={16} />;
-                  }
 
                     return (
                       <button
                         key={key}
-                        onClick={() => viewMode === 'test' && !showResults && handleAnswerSelect(question._id, key)}
+                        onClick={() => viewMode === 'test' && !showResults && handleAnswerSelect(question._id, val)}
                         disabled={viewMode === 'test' && showResults}
                         className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between group ${
                           optionClassName
-                        } ${viewMode === 'test' && !showResults ? 'cursor-pointer hover:scale-[1.02]' : 'cursor-default'}`}
+                        } ${viewMode === 'test' && !showResults ? 'cursor-pointer hover:scale-[1.01]' : 'cursor-default'}`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className="font-medium">{key}.</span>
-                          <span className="flex-1">{option || 'Option not available'}</span>
+                          <span className="font-bold text-sm opacity-80">{key}.</span>
+                          <span className="flex-1">{val || 'Option not available'}</span>
                         </div>
                         {icon && <span className="ml-2">{icon}</span>}
                       </button>

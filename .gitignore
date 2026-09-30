@@ -1,6 +1,97 @@
+# ==========================================
+# QuizMaster AI - Git Ignore Rules
+# ==========================================
+
+# --- Node / Frontend Dependencies & Builds ---
 node_modules/
+*/node_modules/
+dist/
+*/dist/
+build/
+*/build/
+.vite/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Python & Virtual Environments ---
+venv/
+*/venv/
+.venv/
+*/.venv/
+env/
+*/env/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Python Cache & Bytecode ---
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Environment Variables & Secrets ---
 .env
-backend/node_modules/
-frontend/node_modules/
-backend/.env
-frontend/.env
+*.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# --- Local Databases & SQLite ---
+*.db
+*.sqlite
+*.sqlite3
+quizmaster.db
+*/quizmaster.db
+
+# --- Uploads, Temporary & Media Storage ---
+uploads/
+*/uploads/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# --- AI / Machine Learning Heavy Model Weights (>100MB GitHub Limit) ---
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+fine_tuned_quiz_model/
+*/fine_tuned_quiz_model/
+
+# --- Operating System & Editor Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# --- IDEs & Editors ---
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+*~
+
+# --- Logs ---
+logs/
+*.log

@@ -45,8 +45,8 @@ export const pdfAPI = {
     if (token) {
       uploadInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
-    
-    return uploadInstance.post('/api/v1/pdfs/upload', formData, config);
+
+    return uploadInstance.post('/pdfs/upload', formData, config);
   },
 
   // Alias එකක් ලෙස uploadPdf ද තබා ඇත (පරණ තැනක Call වී ඇත්නම් error නොවීමට)
@@ -55,17 +55,17 @@ export const pdfAPI = {
   },
 
   getAll: (params = {}) =>
-    axiosInstance.get('/api/v1/pdfs', { params }),
+    axiosInstance.get('/pdfs', { params }),
 
   getPdfs: (params = {}) =>
-    axiosInstance.get('/api/v1/pdfs', { params }),
+    axiosInstance.get('/pdfs', { params }),
 
   getPdfById: (id) =>
-    axiosInstance.get(`/api/v1/pdfs/${id}`),
+    axiosInstance.get(`/pdfs/${id}`),
 
   getPdfChunks: (id, params = {}) =>
-    axiosInstance.get(`/api/v1/pdfs/${id}/chunks`, { params }),
+    axiosInstance.get(`/pdfs/${id}/chunks`, { params }),
 
   deletePdf: (id) =>
-    axiosInstance.delete(`/api/v1/pdfs/${id}`),
+    axiosInstance.delete(`/pdfs/${id}`),
 };

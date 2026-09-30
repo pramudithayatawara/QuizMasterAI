@@ -40,7 +40,10 @@ const PDFListPage = () => {
         search: searchQuery,
         status: statusFilter === 'all' ? undefined : statusFilter,
       });
-      setPdfs(response.data.data.pdfs || []);
+      const pdfList = Array.isArray(response.data)
+        ? response.data
+        : (response.data?.data?.pdfs || response.data?.pdfs || response.data?.data || []);
+      setPdfs(pdfList);
     } catch (error) {
       toast.error('Failed to load PDFs.');
     } finally {

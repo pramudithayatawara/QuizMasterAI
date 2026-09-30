@@ -109,18 +109,39 @@ const ProfilePage = () => {
     setIsLoading(true);
     try {
       const response = await userAPI.getProfile();
-      setProfileData(response.data.data.user);
-      setStats(response.data.data.stats);
+      // Handle FastAPI direct response (no .data.data wrapper)
+      const userData = response.data?.user || response.data?.data?.user || response.data;
+      const statsData = response.data?.stats || response.data?.data?.stats;
+      
+      setProfileData(userData);
+      setStats(statsData);
       
       // Update form with fetched data
-      resetProfile({
-        firstName: response.data.data.user.firstName,
-        lastName: response.data.data.user.lastName,
-        email: response.data.data.user.email,
-        bio: response.data.data.user.bio || '',
-      });
+      if (userData) {
+        const uName = userData.username || '';
+        const parts = uName.includes(' ') ? uName.split(' ') : [uName, ''];
+        resetProfile({
+          firstName: userData.firstName || userData.first_name || parts[0] || '',
+          lastName: userData.lastName || userData.last_name || parts.slice(1).join(' ') || '',
+          email: userData.email || '',
+          bio: userData.bio || '',
+        });
+      }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to fetch profile data.');
+      console.error('Profile fetch error:', error);
+      // Use auth store user data as fallback
+      if (user) {
+        setProfileData(user);
+        const uName = user.username || '';
+        const parts = uName.includes(' ') ? uName.split(' ') : [uName, ''];
+        resetProfile({
+          firstName: user.firstName || parts[0] || '',
+          lastName: user.lastName || parts.slice(1).join(' ') || '',
+          email: user.email || '',
+          bio: user.bio || '',
+        });
+      }
+      toast.error(error.response?.data?.detail || error.message || 'Failed to fetch profile data.');
     } finally {
       setIsLoading(false);
     }
@@ -129,9 +150,13 @@ const ProfilePage = () => {
   const fetchActivityLog = async () => {
     try {
       const response = await userAPI.getActivityLog();
-      setActivityLog(response.data.data.activities);
+      // Handle FastAPI response format
+      const activities = response.data || response.data?.data?.activities || [];
+      setActivityLog(Array.isArray(activities) ? activities : []);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to fetch activity log.');
+      console.error('Activity log fetch error:', error);
+      // Don't show toast for activity log failure as it's not critical
+      setActivityLog([]);
     }
   };
 
@@ -139,12 +164,17 @@ const ProfilePage = () => {
     setIsSaving(true);
     try {
       const response = await userAPI.updateProfile(data);
-      updateUser(response.data.data.user);
-      setProfileData(response.data.data.user);
+      // Handle FastAPI response format
+      const updatedUser = response.data || response.data?.data?.user;
+      if (updatedUser) {
+        updateUser(updatedUser);
+        setProfileData(updatedUser);
+      }
       toast.success('Profile updated successfully!');
       setIsEditing(false);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update profile.');
+      console.error('Profile update error:', error);
+      toast.error(error.response?.data?.detail || error.message || 'Failed to update profile.');
     } finally {
       setIsSaving(false);
     }
@@ -161,7 +191,8 @@ const ProfilePage = () => {
       resetPassword();
       setIsChangingPassword(false);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to change password.');
+      console.error('Password change error:', error);
+      toast.error(error.response?.data?.detail || error.message || 'Failed to change password.');
     } finally {
       setIsSaving(false);
     }
@@ -190,9 +221,11 @@ const ProfilePage = () => {
     setShowAvatarMenu(false);
     try {
       const response = await userAPI.removeAvatar();
-      if (response.data.data.user) {
-        updateUser(response.data.data.user);
-        setProfileData(response.data.data.user);
+      // Handle FastAPI response format
+      const updatedUser = response.data || response.data?.data?.user;
+      if (updatedUser) {
+        updateUser(updatedUser);
+        setProfileData(updatedUser);
       } else {
         // If backend doesn't return user, update locally
         updateUser({ avatar: null });
@@ -200,7 +233,8 @@ const ProfilePage = () => {
       }
       toast.success('Profile photo removed successfully!');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to remove profile photo.');
+      console.error('Avatar removal error:', error);
+      toast.error(error.response?.data?.detail || error.message || 'Failed to remove profile photo.');
     }
   };
 
@@ -223,17 +257,22 @@ const ProfilePage = () => {
     setIsUploadingAvatar(true);
     try {
       const response = await userAPI.uploadAvatar(file);
-      if (response.data.data.user) {
-        updateUser(response.data.data.user);
-        setProfileData(response.data.data.user);
-      } else {
-        // If backend doesn't return user, update locally
-        updateUser({ avatar: response.data.data.avatar });
-        setProfileData(prev => ({ ...prev, avatar: response.data.data.avatar }));
+      // Handle FastAPI response format
+      const updatedUser = response.data || response.data?.data?.user;
+      const avatarUrl = response.data?.avatar || response.data?.data?.avatar;
+      
+      if (updatedUser) {
+        updateUser(updatedUser);
+        setProfileData(updatedUser);
+      } else if (avatarUrl) {
+        // If backend returns avatar URL directly
+        updateUser({ avatar: avatarUrl });
+        setProfileData(prev => ({ ...prev, avatar: avatarUrl }));
       }
       toast.success('Profile photo updated successfully!');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to upload profile photo.');
+      console.error('Avatar upload error:', error);
+      toast.error(error.response?.data?.detail || error.message || 'Failed to upload profile photo.');
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -292,14 +331,18 @@ const ProfilePage = () => {
               {profileData?.avatar ? (
                 <img
                   src={profileData.avatar}
-                  alt={`${profileData?.firstName} ${profileData?.lastName}`}
-                  className="w-28 h-28 rounded-full border-4 border-slate-900 shadow-xl object-cover"
+                  alt={profileData?.username || 'Avatar'}
+                  className="w-28 h-28 rounded-full border-4 border-slate-900 shadow-xl object-cover ring-2 ring-indigo-500/40"
                 />
               ) : (
                 <Avatar
-                  name={`${profileData?.firstName} ${profileData?.lastName}`}
+                  name={
+                    (profileData?.firstName || profileData?.lastName)
+                      ? `${profileData?.firstName || ''} ${profileData?.lastName || ''}`.trim()
+                      : (profileData?.username || user?.username || 'Quiz Master')
+                  }
                   size="7xl"
-                  className="border-4 border-slate-900 shadow-xl"
+                  className="border-4 border-slate-900 shadow-xl ring-2 ring-indigo-500/40"
                 />
               )}
               {/* Camera/Edit Overlay */}
@@ -350,20 +393,37 @@ const ProfilePage = () => {
           />
         </div>
 
-        {/* User Info */}
+        {/* User Info Header */}
         <div className="ml-36 mt-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-light-900'}`}>
-              {profileData?.firstName} {profileData?.lastName}
+              {(profileData?.firstName || profileData?.lastName)
+                ? `${profileData?.firstName || ''} ${profileData?.lastName || ''}`.trim()
+                : (profileData?.username || user?.username || 'Quiz Master')}
             </h1>
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1 shadow-sm">
+              <Trophy size={13} className="text-amber-400" />
+              Level {currentLevel} Scholar
+            </span>
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+              Rank #{stats?.rank || 1}
+            </span>
+            {stats?.winStreak > 0 && (
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                {stats.winStreak}🔥 Win Streak
+              </span>
+            )}
             <button
               onClick={() => setIsEditing(true)}
-              className={`p-2 rounded-lg ${isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-light-600 hover:text-light-900 hover:bg-light-200'} transition-colors`}
+              className={`p-2 rounded-lg ${isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-light-600 hover:text-light-900 hover:bg-light-200'} transition-colors ml-auto`}
+              title="Edit Profile"
             >
               <Edit2 size={18} />
             </button>
           </div>
-          <p className={isDark ? 'text-slate-400' : 'text-light-600'}>{profileData?.email}</p>
+          <p className={`${isDark ? 'text-slate-400' : 'text-light-600'} text-sm mt-0.5`}>
+            {profileData?.email || user?.email}
+          </p>
         </div>
       </motion.div>
 
@@ -372,7 +432,7 @@ const ProfilePage = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className={`${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-light-300'} backdrop-blur-sm rounded-2xl p-6`}
+        className={`${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-light-300'} backdrop-blur-sm rounded-2xl p-6 border shadow-sm`}
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -385,14 +445,14 @@ const ProfilePage = () => {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-indigo-400">{totalXP}</p>
+            <p className="text-2xl font-bold text-indigo-400">{totalXP.toLocaleString()}</p>
             <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-light-600'}`}>Total XP</p>
           </div>
         </div>
         <div className={`h-3 ${isDark ? 'bg-slate-700' : 'bg-light-300'} rounded-full overflow-hidden`}>
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: `${xpProgress}%` }}
+            animate={{ width: `${Math.min(100, Math.max(0, xpProgress))}%` }}
             transition={{ duration: 1, ease: 'easeOut' }}
             className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
           />
@@ -407,24 +467,29 @@ const ProfilePage = () => {
         className="grid grid-cols-2 md:grid-cols-4 gap-4"
       >
         {[
-          { icon: Trophy, label: 'Level', value: currentLevel, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
-          { icon: Zap, label: 'Total XP', value: totalXP, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
-          { icon: BookOpen, label: 'Quizzes', value: stats?.quizzesCompleted || 0, color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
-          { icon: Swords, label: 'Battles Won', value: stats?.battlesWon || 0, color: 'text-rose-400', bg: 'bg-rose-500/20' },
+          { icon: Trophy, label: 'Level', value: `Lvl ${currentLevel}`, sub: `Rank #${stats?.rank || 1}`, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
+          { icon: Zap, label: 'Total XP', value: totalXP.toLocaleString(), sub: `${Math.round(xpProgress)}% to next lvl`, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
+          { icon: BookOpen, label: 'Quizzes Taken', value: stats?.quizzesCompleted || 0, sub: `Avg ${stats?.averageScore || 0}% score`, color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
+          { icon: Swords, label: 'Battles Won', value: stats?.battlesWon || 0, sub: `${stats?.winStreak || 0} streak 🔥`, color: 'text-rose-400', bg: 'bg-rose-500/20' },
         ].map((stat, index) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3 + index * 0.1 }}
-            whileHover={{ scale: 1.05 }}
-            className={`${isDark ? 'bg-slate-800/40 border-white/10 hover:bg-slate-800/60' : 'bg-white/40 border-light-300 hover:bg-white/60'} backdrop-blur-md rounded-2xl p-6 transition-all cursor-pointer`}
+            whileHover={{ scale: 1.03, y: -2 }}
+            className={`${isDark ? 'bg-slate-800/40 border-white/10 hover:bg-slate-800/70 hover:border-indigo-500/30' : 'bg-white/40 border-light-300 hover:bg-white/70 hover:border-indigo-500/30'} backdrop-blur-md rounded-2xl p-5 transition-all border shadow-sm`}
           >
-            <div className={`w-12 h-12 ${stat.bg} rounded-xl flex items-center justify-center mb-3`}>
-              <stat.icon className={`w-6 h-6 ${stat.color}`} />
+            <div className="flex items-center justify-between mb-3">
+              <div className={`w-11 h-11 ${stat.bg} rounded-xl flex items-center justify-center`}>
+                <stat.icon className={`w-5 h-5 ${stat.color}`} />
+              </div>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isDark ? 'bg-slate-700/60 text-slate-300' : 'bg-light-200 text-light-700'}`}>
+                {stat.sub}
+              </span>
             </div>
             <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-light-900'}`}>{stat.value}</p>
-            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>{stat.label}</p>
+            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-light-600'} font-medium`}>{stat.label}</p>
           </motion.div>
         ))}
       </motion.div>

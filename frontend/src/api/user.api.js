@@ -6,25 +6,25 @@ import axiosInstance from './axios.instance.js';
  */
 export const userAPI = {
   getProfile: () =>
-    axiosInstance.get('/api/v1/users/profile'),
+    axiosInstance.get('/users/profile'),
 
   updateProfile: (data) =>
-    axiosInstance.put('/api/v1/users/profile', data),
+    axiosInstance.put('/users/profile', data),
 
   changePassword: (data) =>
-    axiosInstance.post('/api/v1/users/change-password', data),
+    axiosInstance.post('/users/change-password', data),
 
   getActivityLog: () =>
-    axiosInstance.get('/api/v1/users/activity'),
+    axiosInstance.get('/users/activity'),
 
   uploadAvatar: (file) => {
     const formData = new FormData();
     formData.append('avatar', file);
-    return axiosInstance.post('/api/v1/users/me/avatar', formData, {
+    return axiosInstance.post('/users/me/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
 
   removeAvatar: () =>
-    axiosInstance.delete('/api/v1/users/me/avatar'),
+    axiosInstance.delete('/users/me/avatar'),
 };

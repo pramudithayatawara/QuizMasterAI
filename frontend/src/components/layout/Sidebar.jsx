@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Brain, Swords,
-  Trophy, User, ChevronRight, X,
+  Trophy, User, ChevronRight, X, Sparkles,
 } from 'lucide-react';
 import { useUIStore } from '../../store/ui.store.js';
 import { useTheme } from '../../hooks/useTheme.js';
@@ -30,6 +30,13 @@ const NAV_ITEMS = [
     label: 'Quizzes',
     icon:  Brain,
     path:  ROUTES.QUIZ_LIST,
+  },
+  {
+    label: 'AI Quiz Generator',
+    icon:  Sparkles,
+    path:  ROUTES.QUIZ_AI_GENERATE,
+    badge: 'NEW',
+    badgeColor: 'bg-indigo-500',
   },
   {
     label: 'Battle Mode',

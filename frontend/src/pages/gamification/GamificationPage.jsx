@@ -35,9 +35,9 @@ const GamificationPage = () => {
           gamificationAPI.getBadges(),
           gamificationAPI.getLeaderboard({ limit: 100 }),
         ]);
-        setProfile(profileRes.data.data.profile);
-        setBadges(badgesRes.data.data.badges);
-        setLeaderboard(leaderboardRes.data.data.leaderboard);
+        setProfile(profileRes.data?.data?.profile || profileRes.data?.profile || profileRes.data);
+        setBadges(badgesRes.data?.data?.badges || badgesRes.data?.badges || (Array.isArray(badgesRes.data) ? badgesRes.data : []));
+        setLeaderboard(leaderboardRes.data?.data?.leaderboard || leaderboardRes.data?.leaderboard || (Array.isArray(leaderboardRes.data) ? leaderboardRes.data : []));
       } catch (error) {
         toast.error('Failed to load gamification data.');
       } finally {
@@ -118,7 +118,11 @@ const GamificationPage = () => {
                          border-primary-500/20">
           <div className="flex items-center gap-6">
             <Avatar
-              name={`${user?.firstName} ${user?.lastName}`}
+              name={
+                (user?.firstName || user?.lastName)
+                  ? `${user?.firstName || ''} ${user?.lastName || ''}`.trim()
+                  : (user?.username || 'Player')
+              }
               size="2xl"
               ring
               ringColor="primary"

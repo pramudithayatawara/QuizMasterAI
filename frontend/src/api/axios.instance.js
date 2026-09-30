@@ -6,22 +6,21 @@ import toast from 'react-hot-toast';
  * @description Configured Axios instance with interceptors.
  *
  * Features:
- * - Automatic JWT token injection
+ * - Automatic JWT token injection (via Authorization header)
  * - Token refresh on 401 errors
  * - Global error handling
  * - Request/response logging (dev mode)
+ * - CORS-friendly configuration (credentials disabled, using JWT tokens)
  */
 
-// In development, use empty base URL for Vite proxy; in production, use direct URL
-const BASE_URL = import.meta.env.MODE === 'development'
-  ? ''
-  : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1');
+// Use FastAPI backend URL directly
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
 // ─── Create Instance ──────────────────────────────────────────────────────────
 const axiosInstance = axios.create({
   baseURL:         BASE_URL,
   timeout:         30000,
-  withCredentials: true, // Send cookies (refresh token)
+  withCredentials: false, // Disabled to avoid CORS issues - using JWT tokens instead
   headers: {
     'Content-Type': 'application/json',
   },
@@ -64,8 +63,9 @@ axiosInstance.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !originalRequest.url.includes('/api/v1/auth/refresh-token') &&
-      !originalRequest.url.includes('/api/v1/auth/login')
+      !originalRequest.url.includes('/auth/refresh-token') &&
+      !originalRequest.url.includes('/auth/login') &&
+      !originalRequest.url.includes('/auth/register')
     ) {
       if (isRefreshing) {
         // Queue this request while refresh is in progress
@@ -84,7 +84,7 @@ axiosInstance.interceptors.response.use(
 
       try {
         // Attempt token refresh
-        const response = await axiosInstance.post('/api/v1/auth/refresh-token');
+        const response = await axiosInstance.post('/auth/refresh-token');
         const { accessToken } = response.data;
 
         localStorage.setItem('accessToken', accessToken);

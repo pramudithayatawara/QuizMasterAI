@@ -41,7 +41,18 @@ const RegisterPage = () => {
   });
 
   const onSubmit = async (data) => {
-    const { confirmPassword, ...registerData } = data;
+    const { confirmPassword, firstName, lastName, email, password } = data;
+
+    // Generate username from firstName and lastName (lowercase, no spaces)
+    const username = `${firstName.toLowerCase()}${lastName.toLowerCase()}`;
+
+    // Prepare registration data with username (backend requires username, email, password)
+    const registerData = {
+      username,
+      email,
+      password,
+    };
+
     await registerUser(registerData);
   };
 

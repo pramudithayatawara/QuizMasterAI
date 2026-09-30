@@ -78,3 +78,14 @@ export const getLevelProgress = (xp, level) => {
   const progress = ((xp - xpForCurrentLevel) / (xpForNextLevel - xpForCurrentLevel)) * 100;
   return Math.min(Math.max(progress, 0), 100);
 };
+
+/**
+ * Normalize path by removing double slashes and trailing slashes.
+ */
+export const normalizePath = (path) => {
+  if (!path) return '/';
+  // Remove double slashes
+  const normalized = path.replace(/\/+/g, '/');
+  // Remove trailing slash unless it's root
+  return normalized === '/' ? '/' : normalized.replace(/\/$/, '');
+};

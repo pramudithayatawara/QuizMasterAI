@@ -14,7 +14,7 @@ import Spinner from '../../components/common/Spinner.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import QuizTimer from '../../components/quiz/QuizTimer.jsx';
 import AdaptiveBadge from '../../components/quiz/AdaptiveBadge.jsx';
-import { cn } from '../../utils/helpers.js';
+import { cn, normalizePath } from '../../utils/helpers.js';
 import toast from 'react-hot-toast';
 
 /**
@@ -156,7 +156,7 @@ const QuizPlayPage = () => {
         }, 1500);
       }
       
-      navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id));
+      navigate(normalizePath(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id)));
     }
   };
 
@@ -218,7 +218,6 @@ const QuizPlayPage = () => {
         </Card>
       </div>
 
-      {/* ─── Quiz Content ──────────────────────────────────────────────────── */}
       <Card padding="md">
         <ProgressBar
           value={progress}
@@ -228,9 +227,7 @@ const QuizPlayPage = () => {
           showLabel={false}
         />
       </Card>
-      </div>
 
-      {/* ─── Quiz Content ──────────────────────────────────────────────────── */}
       <Card padding="md">
         {/* Module 04: Difficulty Breakdown Bar */}
         {currentQuiz.difficultyBreakdown && (
@@ -353,7 +350,7 @@ const QuizPlayPage = () => {
 
             {/* Answer Options */}
             <div className="space-y-3">
-              {currentQuestion.type === 'mcq' ? (
+              {currentQuestion.type === 'mcq' || currentQuestion.question_type === 'mcq' || currentQuestion.question_type === 'multiple_choice' ? (
                 // MCQ Options
                 currentQuestion.options.map((option, index) => {
                   const optionLabel = ['A', 'B', 'C', 'D'][index];
@@ -536,7 +533,7 @@ const QuizPlayPage = () => {
               onClick={() => {
                 setShowAutoSubmitModal(false);
                 // Navigate to results after closing modal
-                navigate(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id));
+                navigate(normalizePath(ROUTES.QUIZ_RESULT.replace(':id', currentQuiz._id)));
               }}
             >
               View Results

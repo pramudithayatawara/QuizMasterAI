@@ -5,10 +5,8 @@ import { io } from 'socket.io-client';
  * @description Singleton Socket.io client instance with graceful failure handling.
  */
 
-// In development, use the proxy URL; in production, use the direct URL
-const SOCKET_URL = import.meta.env.MODE === 'development' 
-  ? window.location.origin 
-  : (import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
+// Use FastAPI backend URL for Socket.IO
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://127.0.0.1:8000';
 
 let socketInstance = null;
 let socketEnabled = true; // Flag to disable socket if backend doesn't support it

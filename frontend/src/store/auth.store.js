@@ -48,17 +48,19 @@ export const useAuthStore = create(
         set({ isLoading: true });
         try {
           const response = await authAPI.register(data);
-          const { user } = response.data;
+          // FastAPI returns user directly and TokenResponse has access_token
+          const user = response;
+          const accessToken = response.access_token || null;
 
-          localStorage.setItem('accessToken', response.data.accessToken || null);
-          set({ user, accessToken: response.data.accessToken || null, isLoading: false });
+          localStorage.setItem('accessToken', accessToken);
+          set({ user, accessToken, isLoading: false });
 
-          toast.success(`Welcome to QuizAI, ${user.firstName}! 🎉`);
+          toast.success(`Welcome to QuizAI, ${user.username}! 🎉`);
           return { success: true };
 
         } catch (error) {
           set({ isLoading: false });
-          const message = error.response?.data?.message || 'Registration failed.';
+          const message = error.response?.data?.detail || error.message || 'Registration failed.';
           toast.error(message);
           return { success: false, message };
         }
@@ -71,17 +73,19 @@ export const useAuthStore = create(
         set({ isLoading: true });
         try {
           const response = await authAPI.login(credentials);
-          const { user, tokens } = response.data;
+          // FastAPI returns TokenResponse with access_token and user
+          const accessToken = response.access_token;
+          const user = response.user;
 
-          localStorage.setItem('accessToken', tokens.accessToken);
-          set({ user, accessToken: tokens.accessToken, isLoading: false });
+          localStorage.setItem('accessToken', accessToken);
+          set({ user, accessToken, isLoading: false });
 
-          toast.success(`Welcome back, ${user.firstName}! 👋`);
+          toast.success(`Welcome back, ${user.username}! 👋`);
           return { success: true, user };
 
         } catch (error) {
           set({ isLoading: false });
-          const message = error.response?.data?.message || 'Login failed.';
+          const message = error.response?.data?.detail || error.message || 'Login failed.';
           toast.error(message);
           return { success: false, message };
         }
@@ -118,7 +122,8 @@ export const useAuthStore = create(
       fetchMe: async () => {
         try {
           const response = await authAPI.getMe();
-          set({ user: response.data.user });
+          // FastAPI returns user directly
+          set({ user: response });
         } catch {
           // Token might be invalid, logout
           get().logout(false);

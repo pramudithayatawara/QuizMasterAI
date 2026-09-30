@@ -107,7 +107,7 @@ const SettingsPage = () => {
     setLocalSettings(prev => ({
       ...prev,
       [category]: {
-        ...prev[category],
+        ...(prev?.[category] || {}),
         [field]: value,
       },
     }));
@@ -117,18 +117,41 @@ const SettingsPage = () => {
     setLocalSettings(prev => ({
       ...prev,
       [category]: {
-        ...prev[category],
+        ...(prev?.[category] || {}),
         [field]: value,
       },
     }));
   };
 
   return (
-    <div className="max-w-6xl mx-auto min-h-screen">
+    <div className="max-w-6xl mx-auto min-h-screen pb-12">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-        <p className="text-dark-400">Customize your QuizAI experience</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-800 pb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-1.5">Settings & Preferences</h1>
+          <p className="text-dark-400 text-sm">Customize gameplay audio, visual theme, notification alerts, and privacy</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleReset}
+            disabled={isSaving}
+            leftIcon={<RotateCcw size={15} />}
+          >
+            Reset
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSave}
+            isLoading={isSaving}
+            leftIcon={<Save size={15} />}
+          >
+            Save Preferences
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-6">

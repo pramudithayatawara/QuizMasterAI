@@ -93,8 +93,9 @@ const PdfUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
         }
       }, 1500);
     } catch (error) {
+      console.error('Upload error:', error);
       setUploadStatus('error');
-      setErrorMessage(error.response?.data?.message || 'Upload failed. Please try again.');
+      setErrorMessage(error.response?.data?.detail || error.message || 'Upload failed. Please try again.');
       toast.error(errorMessage);
     }
   };

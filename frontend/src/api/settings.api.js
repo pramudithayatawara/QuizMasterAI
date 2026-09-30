@@ -6,11 +6,11 @@ import axiosInstance from './axios.instance.js';
  */
 export const settingsAPI = {
   getSettings: () =>
-    axiosInstance.get('/api/v1/settings'),
+    axiosInstance.get('/settings'),
 
   updateSettings: (data) =>
-    axiosInstance.put('/api/v1/settings', data),
+    axiosInstance.put('/settings', data),
 
   resetSettings: () =>
-    axiosInstance.post('/api/v1/settings/reset'),
+    axiosInstance.post('/settings/reset'),
 };

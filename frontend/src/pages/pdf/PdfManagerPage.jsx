@@ -32,9 +32,13 @@ const PdfManagerPage = () => {
     try {
       const params = statusFilter !== 'all' ? { status: statusFilter } : {};
       const response = await pdfAPI.getPdfs(params);
-      setPdfs(response.data.data);
+      // FastAPI returns data directly, not wrapped in response.data.data
+      const pdfData = response.data || response || [];
+      setPdfs(Array.isArray(pdfData) ? pdfData : []);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to fetch PDFs');
+      console.error('Failed to fetch PDFs:', error);
+      toast.error(error.response?.data?.detail || error.message || 'Failed to fetch PDFs');
+      setPdfs([]); // Set empty array on error to prevent crashes
     } finally {
       setIsLoading(false);
     }
@@ -51,7 +55,8 @@ const PdfManagerPage = () => {
       toast.success('PDF deleted successfully');
       fetchPdfs();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to delete PDF');
+      console.error('Failed to delete PDF:', error);
+      toast.error(error.response?.data?.detail || error.message || 'Failed to delete PDF');
     } finally {
       setDeletingPdfId(null);
     }
@@ -67,13 +72,14 @@ const PdfManagerPage = () => {
       const response = await quizAPI.generateQuiz({ pdfId, questionCount: 10 });
       toast.dismiss();
       toast.success('Quiz generated successfully!');
-      
+
       // Navigate to quiz page or show success
       // For now, just refresh the PDF list
       fetchPdfs();
     } catch (error) {
+      console.error('Failed to generate quiz:', error);
       toast.dismiss();
-      toast.error(error.response?.data?.message || 'Failed to generate quiz');
+      toast.error(error.response?.data?.detail || error.message || 'Failed to generate quiz');
     }
   };
 
@@ -128,9 +134,9 @@ const PdfManagerPage = () => {
     );
   };
 
-  const filteredPdfs = statusFilter === 'all' 
-    ? pdfs 
-    : pdfs.filter(pdf => pdf.status === statusFilter);
+  const filteredPdfs = statusFilter === 'all'
+    ? (Array.isArray(pdfs) ? pdfs : [])
+    : (Array.isArray(pdfs) ? pdfs.filter(pdf => pdf?.status === statusFilter) : []);
 
   return (
     <div className="space-y-6">
@@ -155,10 +161,10 @@ const PdfManagerPage = () => {
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total PDFs', value: pdfs.length, icon: FileText, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
-          { label: 'Completed', value: pdfs.filter(p => p.status === 'completed').length, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
-          { label: 'Processing', value: pdfs.filter(p => p.status === 'processing').length, icon: Loader2, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
-          { label: 'Failed', value: pdfs.filter(p => p.status === 'failed').length, icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/20' },
+          { label: 'Total PDFs', value: Array.isArray(pdfs) ? pdfs.length : 0, icon: FileText, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
+          { label: 'Completed', value: Array.isArray(pdfs) ? pdfs.filter(p => p?.status === 'completed').length : 0, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
+          { label: 'Processing', value: Array.isArray(pdfs) ? pdfs.filter(p => p?.status === 'processing').length : 0, icon: Loader2, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
+          { label: 'Failed', value: Array.isArray(pdfs) ? pdfs.filter(p => p?.status === 'failed').length : 0, icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/20' },
         ].map((stat, index) => (
           <motion.div
             key={stat.label}
@@ -224,7 +230,7 @@ const PdfManagerPage = () => {
           <AnimatePresence>
             {filteredPdfs.map((pdf, index) => (
               <motion.div
-                key={pdf._id}
+                key={pdf.id || index}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
@@ -237,38 +243,42 @@ const PdfManagerPage = () => {
                 </div>
 
                 {/* PDF Name */}
-                <h3 className={`font-medium mb-1 truncate ${isDark ? 'text-white' : 'text-light-900'}`} title={pdf.originalName}>
-                  {pdf.originalName}
+                <h3 className={`font-medium mb-1 truncate ${isDark ? 'text-white' : 'text-light-900'}`} title={pdf.name || pdf.originalName || 'Unnamed PDF'}>
+                  {pdf.name || pdf.originalName || 'Unnamed PDF'}
                 </h3>
 
                 {/* Status Badge */}
                 <div className="mb-4">
-                  {getStatusBadge(pdf.status)}
+                  {getStatusBadge(pdf.status || 'processing')}
                 </div>
 
                 {/* PDF Details */}
                 <div className="space-y-2 mb-4">
-                  <div className={`flex items-center gap-2 text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
-                    <Calendar size={14} />
-                    <span>{formatDate(pdf.uploadDate)}</span>
-                  </div>
-                  <div className={`flex items-center gap-2 text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
-                    <Layers size={14} />
-                    <span>{formatFileSize(pdf.fileSize)}</span>
-                  </div>
-                  {pdf.chunkCount > 0 && (
+                  {pdf.created_at && (
+                    <div className={`flex items-center gap-2 text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
+                      <Calendar size={14} />
+                      <span>{formatDate(pdf.created_at)}</span>
+                    </div>
+                  )}
+                  {pdf.fileSize && (
+                    <div className={`flex items-center gap-2 text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
+                      <Layers size={14} />
+                      <span>{formatFileSize(pdf.fileSize)}</span>
+                    </div>
+                  )}
+                  {(pdf.chunkCount || pdf.chunk_count) > 0 && (
                     <div className={`flex items-center gap-2 text-sm ${isDark ? 'text-slate-400' : 'text-light-600'}`}>
                       <FileText size={14} />
-                      <span>{pdf.chunkCount} chunks</span>
+                      <span>{pdf.chunkCount || pdf.chunk_count} chunks</span>
                     </div>
                   )}
                 </div>
 
                 {/* Action Buttons */}
                 <div className={`flex gap-2 pt-4 border-t ${isDark ? 'border-white/10' : 'border-light-300'}`}>
-                  {pdf.status === 'completed' && (
+                  {(pdf.status === 'completed') && (
                     <button
-                      onClick={() => handleGenerateQuiz(pdf._id)}
+                      onClick={() => handleGenerateQuiz(pdf.id)}
                       className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-sm transition-colors"
                       title="Generate Quiz"
                     >
@@ -284,12 +294,12 @@ const PdfManagerPage = () => {
                     <span>View</span>
                   </button>
                   <button
-                    onClick={() => handleDeletePdf(pdf._id)}
-                    disabled={deletingPdfId === pdf._id}
+                    onClick={() => handleDeletePdf(pdf.id)}
+                    disabled={deletingPdfId === pdf.id}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Delete PDF"
                   >
-                    {deletingPdfId === pdf._id ? (
+                    {deletingPdfId === pdf.id ? (
                       <Loader2 size={16} className="animate-spin" />
                     ) : (
                       <Trash2 size={16} />

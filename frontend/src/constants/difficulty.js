@@ -1,10 +1,19 @@
 export const DIFFICULTY = {
+  RANDOM: 'random',
   EASY:   'easy',
   MEDIUM: 'medium',
   HARD:   'hard',
 };
 
 export const DIFFICULTY_CONFIG = {
+  random: {
+    label:     'Random / Mixed',
+    color:     'text-indigo-400',
+    bgColor:   'bg-indigo-500/20',
+    border:    'border-indigo-500/30',
+    timeLimit: 20,
+    icon:      '🔀',
+  },
   easy: {
     label:     'Easy',
     color:     'text-secondary-400',

@@ -5,7 +5,7 @@ import {
   Trophy, Target, Clock, TrendingUp,
   CheckCircle, XCircle, Home, RotateCcw,
   Brain, Award, ArrowUp, ArrowDown, Sparkles, X,
-  AlertCircle, BookOpen, Zap,
+  AlertCircle, BookOpen, Zap, Save, Loader2,
 } from 'lucide-react';
 import { quizAPI } from '../../api/quiz.api.js';
 import { ROUTES } from '../../constants/routes.js';
@@ -18,6 +18,8 @@ import AIFeedback from '../../components/quiz/AIFeedback.jsx';
 import { formatDuration, formatScore } from '../../utils/formatters.js';
 import { cn } from '../../utils/helpers.js';
 import toast from 'react-hot-toast';
+import { useTheme } from '../../hooks/useTheme.js';
+import { extractErrorMessage, logErrorDetails } from '../../utils/errorUtils.js';
 
 /**
  * @page QuizResultPage
@@ -26,6 +28,8 @@ import toast from 'react-hot-toast';
 const QuizResultPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [result, setResult] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -35,7 +39,8 @@ const QuizResultPage = () => {
         const response = await quizAPI.review(id);
         setResult(response.data.data.result);
       } catch (error) {
-        toast.error('Failed to load quiz result.');
+        logErrorDetails(error, 'fetchResult');
+        toast.error(extractErrorMessage(error) || 'Failed to load quiz result.');
         navigate(ROUTES.QUIZ_LIST);
       } finally {
         setIsLoading(false);
@@ -68,6 +73,37 @@ const QuizResultPage = () => {
 
   const { value: scoreText, color: scoreColor } = formatScore(result.percentage);
   
+  // Get difficulty badge component
+  const getDifficultyBadge = (difficulty) => {
+    const difficultyConfig = {
+      easy: {
+        color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+        icon: Zap,
+        label: 'Easy'
+      },
+      medium: {
+        color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
+        icon: Award,
+        label: 'Medium'
+      },
+      hard: {
+        color: 'bg-red-500/10 text-red-400 border-red-500/30',
+        icon: Brain,
+        label: 'Hard'
+      }
+    };
+
+    const config = difficultyConfig[difficulty?.toLowerCase()] || difficultyConfig.medium;
+    const Icon = config.icon;
+
+    return (
+      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium ${config.color}`}>
+        <Icon size={12} />
+        <span>{config.label}</span>
+      </div>
+    );
+  };
+  
   // Module 05: Adaptive difficulty change notification
   const [showAdaptiveNotification, setShowAdaptiveNotification] = useState(false);
   const [adaptiveInfo, setAdaptiveInfo] = useState(null);
@@ -77,28 +113,187 @@ const QuizResultPage = () => {
   const [topicAccuracy, setTopicAccuracy] = useState(null);
   const [performanceMetrics, setPerformanceMetrics] = useState(null);
   
+  // Priority 30 & 31 states
+  const [isSavingQuiz, setIsSavingQuiz] = useState(false);
+  const [savedQuizId, setSavedQuizId] = useState(null);
+  const [questionDifficulties, setQuestionDifficulties] = useState({});
+  
   useEffect(() => {
     // Check if this result has adaptive information
-    if (result.adaptive && result.adaptive.shouldAdjust) {
+    if (result?.adaptive && result.adaptive.shouldAdjust) {
       setAdaptiveInfo(result.adaptive);
       setShowAdaptiveNotification(true);
     }
     
     // Module 06: Check for AI feedback
-    if (result.aiFeedback) {
+    if (result?.aiFeedback) {
       setAiFeedback(result.aiFeedback);
     }
     
     // Module 06: Check for topic accuracy
-    if (result.topicAccuracy) {
+    if (result?.topicAccuracy) {
       setTopicAccuracy(result.topicAccuracy);
     }
     
     // Module 06: Check for performance metrics
-    if (result.performanceMetrics) {
+    if (result?.performanceMetrics) {
       setPerformanceMetrics(result.performanceMetrics);
     }
+    
+    // Initialize question difficulties from result if available
+    if (Array.isArray(result?.questions)) {
+      const difficulties = {};
+      result.questions.forEach((q, index) => {
+        if (q.difficulty) {
+          difficulties[q.id || index] = {
+            difficulty: q.difficulty,
+            cognitive_level: q.cognitive_level,
+            difficulty_score: q.difficulty_score
+          };
+        }
+      });
+      setQuestionDifficulties(difficulties);
+    }
   }, [result]);
+
+  // Priority 30: Save quiz handler
+  const handleSaveQuiz = async () => {
+    if (!result || !Array.isArray(result.questions) || result.questions.length === 0) {
+      toast.error('No quiz data available to save');
+      return;
+    }
+
+    setIsSavingQuiz(true);
+    try {
+      const userId = localStorage.getItem('userId') || 1;
+      
+      console.log('💾 Saving quiz result with data:', {
+        user_id: userId,
+        quiz_title: `Quiz Result - ${new Date().toLocaleDateString()}`,
+        quiz_description: `Quiz completed with ${result.percentage}% accuracy`,
+        questions_count: result.questions.length,
+        percentage: result.percentage
+      });
+
+      const quizData = {
+        user_id: parseInt(userId),
+        quiz_title: `Quiz Result - ${new Date().toLocaleDateString()}`,
+        quiz_description: `Quiz completed with ${result.percentage}% accuracy`,
+        questions: result.questions.map((q, index) => {
+          console.log('📝 Processing question:', {
+            index,
+            question: q.question,
+            type: q.type,
+            has_options: !!q.options,
+            has_correct_answer: !!q.correctAnswer,
+            has_difficulty: !!q.difficulty
+          });
+
+          return {
+            question_text: q.question || '',
+            question_type: q.type || 'mcq',
+            options: Array.isArray(q.options) ? q.options : [],
+            correct_answer: q.correctAnswer || '',
+            difficulty: q.difficulty || 'medium',
+            source_chunk_index: index,
+            confidence_score: q.confidence_score || 0.8,
+            question_metadata: {
+              user_answer: q.userAnswer,
+              is_correct: q.isCorrect,
+              explanation: q.explanation,
+              quiz_result_id: id
+            },
+            tags: [q.type || 'mcq', q.difficulty || 'medium']
+          };
+        }),
+        pdf_id: result.pdf_id || null,
+        category: result.category || 'Quiz Result',
+        quiz_metadata: {
+          result_id: id,
+          percentage: result.percentage || 0,
+          time_taken: result.timeTaken || 0,
+          completed_at: new Date().toISOString(),
+          correct_count: result.correctCount || 0,
+          wrong_count: result.wrongCount || 0,
+          total_questions: result.totalQuestions || result.questions.length
+        },
+        tags: ['quiz-result', 'completed']
+      };
+
+      console.log('📤 Sending quiz data to storage API:', quizData);
+
+      const response = await quizAPI.storeQuiz(quizData);
+      
+      console.log('📊 Storage API response:', response);
+      
+      if (response.data && response.data.quiz_id) {
+        setSavedQuizId(response.data.quiz_id);
+        toast.success(`Quiz saved successfully! Quiz ID: ${response.data.quiz_id}`);
+        
+        // Optionally trigger difficulty categorization
+        await handleCategorizeDifficulty(response.data.quiz_id);
+      } else {
+        throw new Error('Failed to save quiz - no quiz_id in response');
+      }
+    } catch (error) {
+      logErrorDetails(error, 'handleSaveQuiz');
+      
+      // Detailed error logging
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+        console.error('Response headers:', error.response.headers);
+      }
+      
+      const errorMessage = extractErrorMessage(error) || 'Failed to save quiz';
+      toast.error(errorMessage);
+    } finally {
+      setIsSavingQuiz(false);
+    }
+  };
+
+  // Priority 31: Difficulty categorization handler
+  const handleCategorizeDifficulty = async (quizId) => {
+    if (!quizId) {
+      toast.error('No quiz ID available for categorization');
+      return;
+    }
+
+    console.log('🎯 Starting difficulty categorization for quiz:', quizId);
+
+    try {
+      const response = await quizAPI.categorizeDifficulty(quizId);
+      
+      console.log('📊 Categorization response:', response);
+      
+      if (response.data) {
+        const difficulties = {};
+        response.data.categorizations?.forEach((cat, index) => {
+          difficulties[cat.question_id] = {
+            difficulty: cat.difficulty,
+            cognitive_level: cat.cognitive_level,
+            difficulty_score: cat.difficulty_score
+          };
+        });
+        
+        setQuestionDifficulties(difficulties);
+        toast.success(`Difficulty categorized: ${response.data.easy_count} Easy, ${response.data.medium_count} Medium, ${response.data.hard_count} Hard`);
+      } else {
+        console.warn('⚠️ No categorization data in response');
+      }
+    } catch (error) {
+      logErrorDetails(error, 'handleCategorizeDifficulty');
+      
+      // Detailed error logging
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+        console.error('Response headers:', error.response.headers);
+      }
+      
+      toast.error(extractErrorMessage(error) || 'Failed to categorize difficulty');
+    }
+  };
 
   const stats = [
     {
@@ -106,29 +301,29 @@ const QuizResultPage = () => {
       value: scoreText,
       icon: Trophy,
       color: scoreColor,
-      bg: result.percentage >= 80
+      bg: (result?.percentage || 0) >= 80
         ? 'bg-secondary-500/10'
-        : result.percentage >= 60
+        : (result?.percentage || 0) >= 60
         ? 'bg-accent-500/10'
         : 'bg-red-500/10',
     },
     {
       label: 'Correct',
-      value: result.correctCount,
+      value: result?.correctCount || 0,
       icon: CheckCircle,
       color: 'text-secondary-400',
       bg: 'bg-secondary-500/10',
     },
     {
       label: 'Wrong',
-      value: result.wrongCount,
+      value: result?.wrongCount || 0,
       icon: XCircle,
       color: 'text-red-400',
       bg: 'bg-red-500/10',
     },
     {
       label: 'Time Taken',
-      value: formatDuration(result.timeTaken),
+      value: formatDuration(result?.timeTaken || 0),
       icon: Clock,
       color: 'text-primary-400',
       bg: 'bg-primary-500/10',
@@ -138,13 +333,14 @@ const QuizResultPage = () => {
   // Module 06: Additional performance stats
   const additionalStats = [];
   
-  if (result.difficulty) {
+  if (result?.difficulty) {
+    const difficulty = result.difficulty || 'medium';
     additionalStats.push({
       label: 'Difficulty',
-      value: result.difficulty.charAt(0).toUpperCase() + result.difficulty.slice(1),
+      value: difficulty.charAt(0).toUpperCase() + difficulty.slice(1),
       icon: Brain,
-      color: result.difficulty === 'hard' ? 'text-purple-400' : result.difficulty === 'medium' ? 'text-blue-400' : 'text-emerald-400',
-      bg: result.difficulty === 'hard' ? 'bg-purple-500/10' : result.difficulty === 'medium' ? 'bg-blue-500/10' : 'bg-emerald-500/10',
+      color: difficulty === 'hard' ? 'text-purple-400' : difficulty === 'medium' ? 'text-blue-400' : 'text-emerald-400',
+      bg: difficulty === 'hard' ? 'bg-purple-500/10' : difficulty === 'medium' ? 'bg-blue-500/10' : 'bg-emerald-500/10',
     });
   }
   
@@ -215,7 +411,7 @@ const QuizResultPage = () => {
       )}
 
       {/* ─── Module 04: Difficulty Breakdown Bar ───────────────────────────────── */}
-      {result.difficultyBreakdown && (
+      {result?.difficultyBreakdown && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -225,28 +421,28 @@ const QuizResultPage = () => {
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-dark-200">Question Difficulty Distribution</span>
               <div className="flex gap-3 text-xs">
-                <span className="text-emerald-400">Easy: {result.difficultyBreakdown.easy}</span>
-                <span className="text-yellow-400">Medium: {result.difficultyBreakdown.medium}</span>
-                <span className="text-red-400">Hard: {result.difficultyBreakdown.hard}</span>
+                <span className="text-emerald-400">Easy: {result.difficultyBreakdown.easy || 0}</span>
+                <span className="text-yellow-400">Medium: {result.difficultyBreakdown.medium || 0}</span>
+                <span className="text-red-400">Hard: {result.difficultyBreakdown.hard || 0}</span>
               </div>
             </div>
             <div className="h-3 bg-dark-700 rounded-full overflow-hidden flex">
-              {result.difficultyBreakdown.easy > 0 && (
+              {(result.difficultyBreakdown.easy || 0) > 0 && (
                 <div 
                   className="bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${(result.difficultyBreakdown.easy / result.totalQuestions) * 100}%` }}
+                  style={{ width: `${((result.difficultyBreakdown.easy || 0) / (result.totalQuestions || 1)) * 100}%` }}
                 />
               )}
-              {result.difficultyBreakdown.medium > 0 && (
+              {(result.difficultyBreakdown.medium || 0) > 0 && (
                 <div 
                   className="bg-yellow-500 transition-all duration-500"
-                  style={{ width: `${(result.difficultyBreakdown.medium / result.totalQuestions) * 100}%` }}
+                  style={{ width: `${((result.difficultyBreakdown.medium || 0) / (result.totalQuestions || 1)) * 100}%` }}
                 />
               )}
-              {result.difficultyBreakdown.hard > 0 && (
+              {(result.difficultyBreakdown.hard || 0) > 0 && (
                 <div 
                   className="bg-red-500 transition-all duration-500"
-                  style={{ width: `${(result.difficultyBreakdown.hard / result.totalQuestions) * 100}%` }}
+                  style={{ width: `${((result.difficultyBreakdown.hard || 0) / (result.totalQuestions || 1)) * 100}%` }}
                 />
               )}
             </div>
@@ -272,15 +468,19 @@ const QuizResultPage = () => {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {result.weakTopics.map((topic, index) => (
-                <span
-                  key={index}
-                  className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 text-sm font-medium border border-yellow-500/30 flex items-center gap-2"
-                >
-                  <BookOpen size={14} />
-                  {topic}
-                </span>
-              ))}
+              {Array.isArray(result.weakTopics) && result.weakTopics.length > 0 ? (
+                result.weakTopics.map((topic, index) => (
+                  <span
+                    key={index}
+                    className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 text-sm font-medium border border-yellow-500/30 flex items-center gap-2"
+                  >
+                    <BookOpen size={14} />
+                    {topic}
+                  </span>
+                ))
+              ) : (
+                <span className="text-sm text-dark-400">No weak topics identified</span>
+              )}
             </div>
           </Card>
         </motion.div>
@@ -304,19 +504,19 @@ const QuizResultPage = () => {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="text-7xl"
         >
-          {result.percentage >= 80 ? '🎉' : result.percentage >= 60 ? '👏' : '📚'}
+          {(result?.percentage || 0) >= 80 ? '🎉' : (result?.percentage || 0) >= 60 ? '👏' : '📚'}
         </motion.div>
         <h1 className="text-4xl font-bold text-dark-50">
-          {result.percentage >= 80
+          {(result?.percentage || 0) >= 80
             ? 'Excellent Work!'
-            : result.percentage >= 60
+            : (result?.percentage || 0) >= 60
             ? 'Good Job!'
             : 'Keep Practicing!'}
         </h1>
         <p className="text-dark-400 max-w-md mx-auto">
-          {result.percentage >= 80
+          {(result?.percentage || 0) >= 80
             ? 'Outstanding performance! You have mastered this topic.'
-            : result.percentage >= 60
+            : (result?.percentage || 0) >= 60
             ? 'Well done! A bit more practice and you will excel.'
             : 'Don\'t give up! Review the material and try again.'}
         </p>
@@ -329,11 +529,11 @@ const QuizResultPage = () => {
         transition={{ delay: 0.2 }}
         className="grid grid-cols-2 lg:grid-cols-6 gap-4"
       >
-        {[...stats, ...additionalStats].map((stat, index) => {
+        {Array.isArray(stats) && Array.isArray(additionalStats) && [...stats, ...additionalStats].map((stat, index) => {
           const Icon = stat.icon;
           return (
             <motion.div
-              key={stat.label}
+              key={stat.label || index}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 + index * 0.1 }}
@@ -426,7 +626,7 @@ const QuizResultPage = () => {
       )}
 
       {/* ─── Weak Topics ───────────────────────────────────────────────────── */}
-      {result.weakTopics && result.weakTopics.length > 0 && (
+      {Array.isArray(result.weakTopics) && result.weakTopics.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -452,7 +652,7 @@ const QuizResultPage = () => {
       )}
 
       {/* ─── XP Reward ─────────────────────────────────────────────────────── */}
-      {result.xpEarned > 0 && (
+      {result?.xpEarned && result.xpEarned > 0 && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -473,6 +673,72 @@ const QuizResultPage = () => {
         </motion.div>
       )}
 
+      {/* ─── Priority 31: Question Breakdown with Difficulty Badges ─────────────── */}
+      {Array.isArray(result.questions) && result.questions.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.85 }}
+        >
+          <Card>
+            <h2 className="text-xl font-bold text-dark-50 mb-4">
+              Question Breakdown
+            </h2>
+            <div className="space-y-3">
+              {result.questions.map((q, index) => {
+                const questionId = q.id || index;
+                const difficultyInfo = questionDifficulties[questionId];
+                const difficulty = difficultyInfo?.difficulty || q.difficulty || 'medium';
+                
+                return (
+                  <div
+                    key={questionId}
+                    className={`p-4 rounded-xl border ${
+                      q.isCorrect
+                        ? 'bg-emerald-500/5 border-emerald-500/20'
+                        : 'bg-red-500/5 border-red-500/20'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-medium text-dark-400">
+                            Q{index + 1}
+                          </span>
+                          {q.isCorrect ? (
+                            <CheckCircle size={16} className="text-emerald-400" />
+                          ) : (
+                            <XCircle size={16} className="text-red-400" />
+                          )}
+                          {/* Priority 31: Difficulty Badge */}
+                          {getDifficultyBadge(difficulty)}
+                        </div>
+                        <p className="text-dark-200 mb-2">{q.question || 'No question text'}</p>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-dark-400">Your answer:</span>
+                          <span className={`font-medium ${
+                            q.isCorrect ? 'text-emerald-400' : 'text-red-400'
+                          }`}>
+                            {q.userAnswer || 'Not answered'}
+                          </span>
+                        </div>
+                        {q.explanation && (
+                          <div className={`mt-2 p-2 rounded-lg text-sm ${
+                            isDark ? 'bg-slate-800/50 text-gray-300' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            <span className="font-medium">Explanation:</span> {q.explanation}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
       {/* ─── Actions ───────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -480,6 +746,28 @@ const QuizResultPage = () => {
         transition={{ delay: 0.9 }}
         className="flex flex-col sm:flex-row gap-3"
       >
+        {/* Priority 30: Save Quiz Button */}
+        <button
+          onClick={handleSaveQuiz}
+          disabled={isSavingQuiz || !result?.questions}
+          className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
+            isSavingQuiz || !result?.questions
+              ? 'bg-slate-700 text-gray-400 cursor-not-allowed'
+              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+          }`}
+        >
+          {isSavingQuiz ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              <span>Saving Quiz...</span>
+            </>
+          ) : (
+            <>
+              <Save size={18} />
+              <span>Save Quiz</span>
+            </>
+          )}
+        </button>
         <Link to={ROUTES.DASHBOARD} className="flex-1">
           <Button variant="secondary" className="w-full" leftIcon={<Home size={18} />}>
             Go to Dashboard
