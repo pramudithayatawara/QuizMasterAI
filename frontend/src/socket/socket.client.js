@@ -5,8 +5,14 @@ import { io } from 'socket.io-client';
  * @description Singleton Socket.io client instance with graceful failure handling.
  */
 
-// Use FastAPI backend URL for Socket.IO
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://127.0.0.1:8000';
+const getSocketUrl = () => {
+  const currentHost = (typeof window !== 'undefined' && window.location.hostname) ? window.location.hostname : '127.0.0.1';
+  if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+    return `http://${currentHost}:8000`;
+  }
+  return import.meta.env.VITE_SOCKET_URL || `http://${currentHost}:8000`;
+};
+const SOCKET_URL = getSocketUrl();
 
 let socketInstance = null;
 let socketEnabled = true; // Flag to disable socket if backend doesn't support it

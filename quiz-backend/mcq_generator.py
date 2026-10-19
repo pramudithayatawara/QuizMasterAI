@@ -383,8 +383,10 @@ class MCQGenerator:
                 q_text = f"Which statement is accurate according to the lesson material?"
                 correct_answer = fact.rstrip('.')
 
-        # Clean answer
+        # Clean answer and enforce sensible length for options
         correct_answer = correct_answer.strip()
+        if len(correct_answer) > 120:
+            correct_answer = correct_answer[:117].rsplit(' ', 1)[0] + '...'
         if len(correct_answer) > 0:
             correct_answer = correct_answer[0].capitalize() + correct_answer[1:]
 
@@ -407,7 +409,15 @@ class MCQGenerator:
                 "The program code remains completely isolated from all hardware activities"
             ]
 
-        return q_text, correct_answer, distractors
+        # Ensure all distractors are clean and <= 120 chars
+        cleaned_distractors = []
+        for d in distractors:
+            d_str = str(d).strip()
+            if len(d_str) > 120:
+                d_str = d_str[:117].rsplit(' ', 1)[0] + '...'
+            cleaned_distractors.append(d_str)
+
+        return q_text, correct_answer, cleaned_distractors
 
     def generate_mcq_from_content(
         self,

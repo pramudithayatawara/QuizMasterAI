@@ -38,8 +38,8 @@ export const pdfAPI = {
     // Create custom axios instance without explicit Content-Type header
     const uploadInstance = axios.create({
       baseURL: axiosInstance.defaults.baseURL,
-      timeout: 60000, // Large PDF processing සඳහා timeout එක 60s දක්වා වැඩි කරන ලදී
-      withCredentials: true,
+      timeout: 300000, // 5 minutes timeout for large lecture documents & vector indexing
+      withCredentials: false,
     });
     
     if (token) {

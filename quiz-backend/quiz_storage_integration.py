@@ -7,7 +7,7 @@ secure database operations.
 """
 
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from sqlalchemy.orm import Session
 import traceback
 from datetime import datetime
@@ -317,6 +317,7 @@ def create_quiz_storage_router():
     @router.post("/store")
     async def store_quiz(
         payload: Dict[str, Any],
+        authorization: Optional[str] = Header(None),
         db: Session = Depends(get_db)
     ):
         """
@@ -330,7 +331,14 @@ def create_quiz_storage_router():
         """
         try:
             service = get_quiz_storage_service()
-            user_id = payload.get("user_id", 1)
+            auth_user_id = 0
+            if authorization and authorization.startswith("Bearer "):
+                tok = authorization.replace("Bearer ", "").strip()
+                if tok.startswith("token_"):
+                    p = tok.split("_")
+                    if len(p) >= 2 and p[1].isdigit():
+                        auth_user_id = int(p[1])
+            user_id = auth_user_id if auth_user_id > 0 else payload.get("user_id", 1)
             quiz_title = payload.get("quiz_title", "Untitled Quiz")
             quiz_description = payload.get("quiz_description", "")
             questions = payload.get("questions", [])

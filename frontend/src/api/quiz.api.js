@@ -18,7 +18,7 @@ export const quizAPI = {
       file_path: data.file_path
     });
     
-    return axios.post('http://127.0.0.1:8000/api/generate-quiz-from-pdf', data, {
+    return axios.post('/api/generate-quiz-from-pdf', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -30,7 +30,7 @@ export const quizAPI = {
   // Mixed Question Generation - Priority 25
   generateMixedQuestions: (data) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post('http://127.0.0.1:8000/api/v1/mixed/generate', data, {
+    return axios.post('/api/v1/mixed/generate', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -74,7 +74,7 @@ export const quizAPI = {
 
     console.log('📤 Final JSON payload:', jsonData);
 
-    return axios.post('http://127.0.0.1:8000/api/v1/mixed/generate-from-pdf', jsonData, {
+    return axios.post('/api/v1/mixed/generate-from-pdf', jsonData, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -115,7 +115,7 @@ export const quizAPI = {
     }
     formData.append('enable_content_verification', enableContentVerification.toString());
 
-    return axios.post('http://127.0.0.1:8000/api/v1/mixed/generate-from-pdf', formData, {
+    return axios.post('/api/v1/mixed/generate-from-pdf', formData, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'multipart/form-data'
@@ -160,7 +160,7 @@ export const quizAPI = {
 
     console.log('📤 Sending storage payload:', payload);
 
-    return axios.post('http://127.0.0.1:8000/api/v1/quizzes/store', payload, {
+    return axios.post('/api/v1/quizzes/store', payload, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -172,7 +172,7 @@ export const quizAPI = {
   // Priority 31: Categorize quiz difficulty
   categorizeDifficulty: (quizId) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post(`http://127.0.0.1:8000/api/v1/quizzes/${quizId}/categorize-difficulty`, {}, {
+    return axios.post(`/api/v1/quizzes/${quizId}/categorize-difficulty`, {}, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -191,7 +191,7 @@ export const quizAPI = {
   // Question Validation - Priority 28
   validateRelevance: (data) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post('http://127.0.0.1:8000/api/v1/validation/relevance', data, {
+    return axios.post('/api/v1/validation/relevance', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -203,7 +203,7 @@ export const quizAPI = {
   // Batch Question Validation - Priority 28
   validateBatchRelevance: (data) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post('http://127.0.0.1:8000/api/v1/validation/relevance-batch', data, {
+    return axios.post('/api/v1/validation/relevance-batch', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -215,7 +215,7 @@ export const quizAPI = {
   // Duplicate Detection - Priority 29
   checkDuplicates: (data) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post('http://127.0.0.1:8000/api/v1/validation/duplicates', data, {
+    return axios.post('/api/v1/validation/duplicates', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -227,7 +227,7 @@ export const quizAPI = {
   // Combined Validation and Deduplication - Priority 28 & 29
   validateAndDeduplicate: (data) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post('http://127.0.0.1:8000/api/v1/validation/validate-and-deduplicate', data, {
+    return axios.post('/api/v1/validation/validate-and-deduplicate', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -283,7 +283,7 @@ export const quizAPI = {
   // AI Quiz Generation from context (direct backend call)
   generateFromContext: (data) => {
     const token = localStorage.getItem('accessToken');
-    return axios.post('http://127.0.0.1:8000/api/generate-quiz', data, {
+    return axios.post('/api/generate-quiz', data, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -294,7 +294,7 @@ export const quizAPI = {
   // Utility: Get quiz by ID from new storage endpoints
   getStoredQuiz: (quizId) => {
     const token = localStorage.getItem('accessToken');
-    return axios.get(`http://127.0.0.1:8000/api/v1/quizzes/${quizId}`, {
+    return axios.get(`/api/v1/quizzes/${quizId}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'

@@ -233,26 +233,25 @@ class AdaptiveQuizGenerator:
         if target_difficulty:
             return target_difficulty
         
-        # If user has no history, start with medium
-        if user_performance.total_quizzes_completed == 0:
+        # Rule 1: New users with no attempts start at Medium baseline
+        if user_performance.total_quizzes_completed == 0 or not user_performance.recent_scores:
             return DifficultyLevel.MEDIUM
         
-        # Analyze recent performance
-        recent_avg = np.mean(user_performance.recent_scores) if user_performance.recent_scores else 0
+        recent = user_performance.recent_scores
+        recent_avg = float(np.mean(recent))
         
-        # Difficulty adaptation logic
-        if recent_avg >= 85:
-            # High performer - challenge with hard questions
+        # Rule 2: 3 consecutive scores >= 80% or recent average >= 80% triggers promotion to HARD
+        consecutive_high = len(recent) >= 3 and all(s >= 80 for s in recent[-3:])
+        if consecutive_high or recent_avg >= 80.0:
             return DifficultyLevel.HARD
-        elif recent_avg >= 70:
-            # Good performer - maintain medium difficulty
-            return DifficultyLevel.MEDIUM
-        elif recent_avg >= 50:
-            # Average performer - mix of easy and medium
-            return DifficultyLevel.MEDIUM
-        else:
-            # Struggling - use easy questions to build confidence
+        
+        # Rule 3: 3 consecutive scores <= 50% or recent average < 60% triggers demotion to EASY
+        consecutive_low = len(recent) >= 2 and all(s <= 50 for s in recent[-2:])
+        if consecutive_low or recent_avg < 60.0 or (recent and recent[-1] <= 50):
             return DifficultyLevel.EASY
+        
+        # Rule 4: Intermediate performance (50% <= score < 80%) retains MEDIUM difficulty
+        return DifficultyLevel.MEDIUM
     
     def generate_question_from_content(
         self,

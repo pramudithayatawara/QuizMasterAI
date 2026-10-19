@@ -275,7 +275,7 @@ const Navbar = () => {
                             {notif.title}
                           </p>
                           <span className="text-[10px] text-dark-400 whitespace-nowrap">
-                            {formatRelativeTime(new Date(notif.createdAt))}
+                            {formatRelativeTime(notif.createdAt)}
                           </span>
                         </div>
                         <p className="text-xs text-dark-400 line-clamp-2 leading-relaxed">

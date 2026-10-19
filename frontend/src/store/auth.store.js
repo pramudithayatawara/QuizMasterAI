@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { authAPI } from '../api/auth.api.js';
 import { disconnectSocket } from '../socket/socket.client.js';
 import toast from 'react-hot-toast';
+import { useQuizStore } from './quiz.store.js';
 
 /**
  * @store useAuthStore
@@ -48,14 +49,19 @@ export const useAuthStore = create(
         set({ isLoading: true });
         try {
           const response = await authAPI.register(data);
-          // FastAPI returns user directly and TokenResponse has access_token
-          const user = response;
-          const accessToken = response.access_token || null;
+          // FastAPI returns user directly or TokenResponse with user & access_token
+          const user = response.user || response;
+          const accessToken = response.access_token || response.accessToken || null;
 
-          localStorage.setItem('accessToken', accessToken);
+          if (accessToken) {
+            localStorage.setItem('accessToken', accessToken);
+          }
+          if (user?.id) {
+            localStorage.setItem('userId', String(user.id));
+          }
           set({ user, accessToken, isLoading: false });
 
-          toast.success(`Welcome to QuizAI, ${user.username}! 🎉`);
+          toast.success(`Welcome to QuizAI, ${user.username || 'friend'}! 🎉`);
           return { success: true };
 
         } catch (error) {
@@ -77,7 +83,12 @@ export const useAuthStore = create(
           const accessToken = response.access_token;
           const user = response.user;
 
-          localStorage.setItem('accessToken', accessToken);
+          if (accessToken) {
+            localStorage.setItem('accessToken', accessToken);
+          }
+          if (user?.id) {
+            localStorage.setItem('userId', String(user.id));
+          }
           set({ user, accessToken, isLoading: false });
 
           toast.success(`Welcome back, ${user.username}! 👋`);
@@ -103,6 +114,14 @@ export const useAuthStore = create(
 
         disconnectSocket();
         localStorage.removeItem('accessToken');
+        localStorage.removeItem('userId');
+        localStorage.removeItem('auth-store');
+
+        // Reset quiz store state so new users don't see previous user data
+        if (useQuizStore?.getState()?.clearQuizState) {
+          useQuizStore.getState().clearQuizState();
+        }
+        useQuizStore.setState({ quizzes: [] });
 
         set({
           user:        null,

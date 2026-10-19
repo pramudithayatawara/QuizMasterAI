@@ -117,6 +117,27 @@ class PDF(Base):
     # Relationships
     user = relationship("User", back_populates="uploaded_pdfs")
     quizzes = relationship("Quiz", back_populates="source_pdf")
+    chunks = relationship("PDFChunk", back_populates="pdf", cascade="all, delete-orphan")
+
+
+class PDFChunk(Base):
+    """
+    Persistent chunk storage with vector embeddings for RAG retrieval.
+    Stores extracted text chunks and pre-computed dense embeddings per PDF.
+    """
+    __tablename__ = "pdf_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pdf_id = Column(Integer, ForeignKey("pdfs.id"), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    token_count = Column(Integer, nullable=True)
+    embedding = Column(JSON, nullable=True)  # Normalized dense vector embedding (list of floats)
+    chunk_metadata = Column(JSON, nullable=True)  # Extra info: page_number, section, keywords
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    pdf = relationship("PDF", back_populates="chunks")
 
 
 class Battle(Base):

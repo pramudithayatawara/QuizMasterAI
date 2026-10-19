@@ -23,10 +23,30 @@ export const formatDate = (date, pattern = 'MMM d, yyyy') => {
 export const formatRelativeTime = (date) => {
   if (!date) return '—';
   try {
-    return formatDistanceToNow(
-      typeof date === 'string' ? parseISO(date) : date,
-      { addSuffix: true }
-    );
+    let d = date;
+    if (typeof d === 'string') {
+      let s = d.trim();
+      if (!s.endsWith('Z') && !s.includes('+') && !s.includes('GMT')) {
+        s = s + 'Z';
+      }
+      d = parseISO(s);
+    }
+    const targetMs = d instanceof Date ? d.getTime() : new Date(d).getTime();
+    if (isNaN(targetMs)) return '—';
+    const diffSec = Math.floor((Date.now() - targetMs) / 1000);
+
+    if (diffSec < 45 && diffSec >= -10) {
+      return 'Just now';
+    }
+    if (diffSec < 3600 && diffSec >= 45) {
+      const mins = Math.max(1, Math.floor(diffSec / 60));
+      return `${mins}m ago`;
+    }
+    if (diffSec < 86400 && diffSec >= 3600) {
+      const hours = Math.floor(diffSec / 3600);
+      return `${hours}h ago`;
+    }
+    return formatDistanceToNow(d, { addSuffix: true });
   } catch {
     return '—';
   }

@@ -93,8 +93,21 @@ const InteractiveMixedQuiz = ({ questions, isDark }) => {
   
   const options = getOptions();
 
-  const handleAnswerSelect = (answer) => {
-    const isCorrect = answer === currentQuestion.correct_answer;
+  const isAnswerMatching = (ans, optIdx) => {
+    if (!ans) return false;
+    const ca = String(currentQuestion?.correct_answer || '').trim().toLowerCase();
+    const optStr = String(ans || '').trim().toLowerCase();
+    const optLetter = ['a', 'b', 'c', 'd'][optIdx] || '';
+    return (
+      optStr === ca ||
+      (optLetter && optLetter === ca) ||
+      (optLetter && ca.startsWith(`option ${optLetter}`)) ||
+      (optLetter && ca.startsWith(`${optLetter}.`))
+    );
+  };
+
+  const handleAnswerSelect = (answer, index) => {
+    const isCorrect = isAnswerMatching(answer, index);
     
     setUserAnswers(prev => ({
       ...prev,
@@ -134,7 +147,7 @@ const InteractiveMixedQuiz = ({ questions, isDark }) => {
     setShowResults(false);
   };
 
-  const getOptionStyle = (option) => {
+  const getOptionStyle = (option, index) => {
     if (!feedback) {
       return cn(
         'quiz-option w-full',
@@ -143,7 +156,7 @@ const InteractiveMixedQuiz = ({ questions, isDark }) => {
     }
 
     const isSelected = feedback.selectedAnswer === option;
-    const isCorrect = option === feedback.correctAnswer;
+    const isCorrect = isAnswerMatching(option, index);
 
     if (isSelected && isCorrect) {
       return cn(
@@ -403,13 +416,15 @@ const InteractiveMixedQuiz = ({ questions, isDark }) => {
         <div className="space-y-3 mb-6">
           {options.map((option, index) => {
             const optionLabel = isMCQ ? ['A', 'B', 'C', 'D'][index] : (option === 'True' ? '✓' : '✗');
+            const isOptCorrect = isAnswerMatching(option, index);
+            const isOptSelected = feedback && feedback.selectedAnswer === option;
             
             return (
               <button
                 key={index}
-                onClick={() => !feedback && handleAnswerSelect(option)}
+                onClick={() => !feedback && handleAnswerSelect(option, index)}
                 disabled={!!feedback}
-                className={getOptionStyle(option)}
+                className={getOptionStyle(option, index)}
               >
                 <span className={cn(
                   'flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center',
@@ -417,9 +432,9 @@ const InteractiveMixedQuiz = ({ questions, isDark }) => {
                   'border-2',
                   isDark ? 'border-slate-600' : 'border-gray-300',
                   (userAnswer === option && !feedback) && (isDark ? 'bg-blue-600 border-blue-400' : 'bg-blue-100 border-blue-400'),
-                  feedback && (option === feedback.correctAnswer) && (isDark ? 'bg-green-600 border-green-400' : 'bg-green-100 border-green-400'),
-                  feedback && (option === feedback.selectedAnswer && option !== feedback.correctAnswer) && (isDark ? 'bg-red-600 border-red-400' : 'bg-red-100 border-red-400'),
-                  feedback && (option !== feedback.selectedAnswer && option !== feedback.correctAnswer) && (isDark ? 'bg-slate-700 border-slate-600 opacity-50' : 'bg-gray-100 border-gray-300 opacity-50')
+                  feedback && isOptCorrect && (isDark ? 'bg-green-600 border-green-400' : 'bg-green-100 border-green-400'),
+                  feedback && (isOptSelected && !isOptCorrect) && (isDark ? 'bg-red-600 border-red-400' : 'bg-red-100 border-red-400'),
+                  feedback && (!isOptSelected && !isOptCorrect) && (isDark ? 'bg-slate-700 border-slate-600 opacity-50' : 'bg-gray-100 border-gray-300 opacity-50')
                 )}>
                   {optionLabel}
                 </span>

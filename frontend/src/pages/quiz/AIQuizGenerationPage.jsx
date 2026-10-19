@@ -18,7 +18,11 @@ import {
   Award,
   Filter,
   Sliders,
-  Play
+  Play,
+  Edit3,
+  Printer,
+  Check,
+  X
 } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme.js';
 import { quizAPI } from '../../api/quiz.api.js';
@@ -65,6 +69,17 @@ const AIQuizGenerationPage = () => {
   // Interactive quiz mode state
   const [showInteractiveQuiz, setShowInteractiveQuiz] = useState(false);
 
+  // Question Inline Editor state
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    question: '',
+    options: ['', '', '', ''],
+    correct_answer: '',
+    explanation: '',
+    difficulty: 'medium',
+    question_type: 'mcq'
+  });
+
   // Fetch PDFs on component mount
   useEffect(() => {
     fetchPDFs();
@@ -74,7 +89,7 @@ const AIQuizGenerationPage = () => {
     setIsLoadingPDFs(true);
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch('http://127.0.0.1:8000/api/v1/pdfs', {
+      const response = await fetch('/api/v1/pdfs', {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       const data = await response.json();
@@ -113,13 +128,18 @@ const AIQuizGenerationPage = () => {
       const response = await quizAPI.generateFromContext(requestData);
       
       if (response && response.data && response.data.question) {
+        const genOptions = Array.isArray(response.data.options) && response.data.options.length > 0
+          ? response.data.options
+          : [];
         setGeneratedQuestions([{
           id: Date.now(),
           question: response.data.question,
-          context: response.data.context,
-          options: [],
+          context: response.data.context || context.trim().substring(0, 80) + '...',
+          options: genOptions,
+          correct_answer: response.data.correct_answer || (genOptions.length > 0 ? genOptions[0] : ''),
+          explanation: response.data.explanation || 'Generated from input context.',
           question_type: 'mcq',
-          difficulty: 'medium',
+          difficulty: response.data.difficulty || 'medium',
           generatedAt: new Date().toISOString()
         }]);
         toast.success('Quiz question generated successfully!');
@@ -150,7 +170,7 @@ const AIQuizGenerationPage = () => {
       console.log('📄 Fetching PDF content for:', selectedPDF.id);
       
       // Fetch PDF content from backend
-      const pdfResponse = await fetch(`http://127.0.0.1:8000/api/v1/pdfs/${selectedPDF.id}/chunks`, {
+      const pdfResponse = await fetch(`/api/v1/pdfs/${selectedPDF.id}/chunks`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
@@ -181,15 +201,15 @@ const AIQuizGenerationPage = () => {
         if (ragResponse.data && ragResponse.data.questions) {
           const questions = ragResponse.data.questions.map((q, index) => ({
             id: Date.now() + index,
-            question: q.question,
+            question: q.question || q.question_text,
             context: q.context_snippet || selectedPDF.original_name,
-            options: [],
-            question_type: 'mcq',
-            difficulty: 'medium',
-            correct_answer: '',
-            explanation: '',
-            confidence_score: 0.8,
-            relevance_score: 0.8,
+            options: q.options || (Array.isArray(q.choices) ? q.choices : []),
+            question_type: q.question_type || 'mcq',
+            difficulty: q.difficulty || 'medium',
+            correct_answer: q.correct_answer || (q.options && q.options[0]) || '',
+            explanation: q.explanation || '',
+            confidence_score: 0.85,
+            relevance_score: 0.9,
             generatedAt: new Date().toISOString()
           }));
 
@@ -291,7 +311,7 @@ const AIQuizGenerationPage = () => {
             // Final fallback
             return [];
           })(),
-          question_type: q.type || q.question_type, // Use 'type' from backend or fallback to 'question_type'
+          question_type: ((q.type || q.question_type) === 'multiple_choice' || (q.type || q.question_type) === 'mcq') ? 'mcq' : 'true_false',
           difficulty: q.difficulty || 'medium',
           correct_answer: q.correct_answer || '',
           explanation: q.explanation || '',
@@ -365,6 +385,338 @@ const AIQuizGenerationPage = () => {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Quiz downloaded successfully');
+  };
+
+  // Inline Question Editing Handlers
+  const handleStartEdit = (index) => {
+    const q = generatedQuestions[index];
+    if (!q) return;
+    const isMcq = (q.question_type === 'mcq' || q.type === 'mcq' || (!q.question_type && Array.isArray(q.options)));
+    let opts = Array.isArray(q.options) ? [...q.options] : [];
+    if (isMcq) {
+      while (opts.length < 4) {
+        opts.push(`Option ${String.fromCharCode(65 + opts.length)}`);
+      }
+    } else {
+      opts = ['True', 'False'];
+    }
+
+    setEditFormData({
+      question: q.question_text || q.question || '',
+      options: opts,
+      correct_answer: q.correct_answer || (opts.length > 0 ? opts[0] : ''),
+      explanation: q.explanation || '',
+      difficulty: q.difficulty || 'medium',
+      question_type: isMcq ? 'mcq' : 'true_false'
+    });
+    setEditingIndex(index);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingIndex === null || !generatedQuestions[editingIndex]) return;
+    if (!editFormData.question.trim()) {
+      toast.error('Question stem cannot be empty');
+      return;
+    }
+
+    const updated = [...generatedQuestions];
+    updated[editingIndex] = {
+      ...updated[editingIndex],
+      question: editFormData.question,
+      question_text: editFormData.question,
+      options: editFormData.question_type === 'mcq' ? editFormData.options : ['True', 'False'],
+      correct_answer: editFormData.correct_answer,
+      explanation: editFormData.explanation,
+      difficulty: editFormData.difficulty,
+      question_type: editFormData.question_type
+    };
+
+    setGeneratedQuestions(updated);
+    setEditingIndex(null);
+    toast.success('Question updated successfully!');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+  };
+
+  const handleDeleteQuestion = (index) => {
+    const updated = generatedQuestions.filter((_, idx) => idx !== index);
+    setGeneratedQuestions(updated);
+    if (editingIndex === index) {
+      setEditingIndex(null);
+    }
+    toast.success('Question removed');
+  };
+
+  const escapeHtml = (text) => {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  // Formatted Printable Exam Paper Export (A4 University Layout with Confidential Answer Key)
+  const handleDownloadExamPaper = () => {
+    if (!Array.isArray(generatedQuestions) || generatedQuestions.length === 0) {
+      toast.error('No questions available to generate exam paper');
+      return;
+    }
+
+    const examTitle = inputMode === 'pdf' 
+      ? (selectedPDF?.original_name?.replace(/\.[^/.]+$/, "") || 'Course Examination') 
+      : (quizConfig.topic || 'Subject Examination');
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow popups to preview and print the exam paper');
+      return;
+    }
+
+    const questionsHtml = generatedQuestions.map((q, idx) => {
+      const qText = q.question_text || q.question || '';
+      const isMcq = (q.question_type === 'mcq' || q.type === 'mcq' || (!q.question_type && Array.isArray(q.options)));
+      const options = Array.isArray(q.options) && q.options.length > 0 
+        ? q.options 
+        : (isMcq ? ['Option A', 'Option B', 'Option C', 'Option D'] : ['True', 'False']);
+
+      return `
+        <div class="question-block">
+          <div class="question-stem"><strong>${idx + 1}.</strong> ${escapeHtml(qText)} <span class="difficulty-tag">[${escapeHtml(String(q.difficulty || 'MEDIUM').toUpperCase())}]</span></div>
+          <div class="options-container">
+            ${options.map((opt, oIdx) => {
+              const letter = String.fromCharCode(65 + oIdx);
+              return `<div class="option-line"><span class="box">&#9633;</span> <span class="opt-label">${letter}.</span> ${escapeHtml(String(opt))}</div>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const answerKeyHtml = generatedQuestions.map((q, idx) => {
+      return `
+        <tr>
+          <td style="text-align: center; font-weight: bold;">Q${idx + 1}</td>
+          <td style="font-weight: 600; color: #1e3a8a;">${escapeHtml(String(q.correct_answer || 'N/A'))}</td>
+          <td>${escapeHtml(String(q.explanation || 'Verified from course material.'))}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlDoc = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Examination Paper - ${escapeHtml(examTitle)}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 18mm 20mm 20mm 20mm;
+    }
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      color: #111827;
+      margin: 0;
+      padding: 24px;
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: center;
+      border-bottom: 2px solid #000;
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+    }
+    .header-table h1 {
+      margin: 0;
+      font-size: 15pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .header-table h2 {
+      margin: 3px 0;
+      font-size: 12.5pt;
+      font-weight: normal;
+    }
+    .header-table h3 {
+      margin: 3px 0;
+      font-size: 11.5pt;
+      font-style: italic;
+    }
+    .candidate-info {
+      width: 100%;
+      border: 1px solid #333;
+      padding: 8px 12px;
+      margin-bottom: 16px;
+      font-size: 10pt;
+      background: #fafafa;
+    }
+    .candidate-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .instructions {
+      font-size: 9.5pt;
+      font-style: italic;
+      margin-bottom: 18px;
+      padding: 8px 12px;
+      background-color: #f3f4f6;
+      border-left: 3px solid #374151;
+    }
+    .question-block {
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+    .question-stem {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .difficulty-tag {
+      font-size: 8.5pt;
+      color: #4b5563;
+      margin-left: 4px;
+      font-family: sans-serif;
+    }
+    .options-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px 16px;
+      margin-left: 18px;
+    }
+    .option-line {
+      font-size: 10pt;
+    }
+    .box {
+      font-size: 11pt;
+      margin-right: 4px;
+    }
+    .opt-label {
+      font-weight: bold;
+    }
+    .page-break {
+      page-break-before: always;
+      margin-top: 25px;
+    }
+    .key-header {
+      text-align: center;
+      margin-bottom: 12px;
+      border-bottom: 2px dashed #dc2626;
+      padding-bottom: 8px;
+    }
+    .key-header h2 {
+      color: #b91c1c;
+      font-size: 13pt;
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    table.key-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+    }
+    table.key-table th, table.key-table td {
+      border: 1px solid #d1d5db;
+      padding: 6px 10px;
+      text-align: left;
+    }
+    table.key-table th {
+      background-color: #f3f4f6;
+      font-weight: bold;
+    }
+    .no-print-bar {
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .print-btn {
+      background-color: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      font-size: 10.5pt;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: sans-serif;
+    }
+    .print-btn:hover {
+      background-color: #1d4ed8;
+    }
+    @media print {
+      .no-print-bar {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print-bar">
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  </div>
+
+  <div class="header-table">
+    <h1>Rajarata University of Sri Lanka</h1>
+    <h2>Faculty of Applied Sciences &bull; Department of Computing</h2>
+    <h3>Continuous Assessment / Examination Paper</h3>
+    <div style="margin-top: 6px; font-weight: bold; font-size: 11.5pt;">
+      Course / Module: ${escapeHtml(examTitle)}
+    </div>
+  </div>
+
+  <div class="candidate-info">
+    <div class="candidate-row">
+      <span><strong>Student Name:</strong> ............................................................................</span>
+      <span><strong>Registration No:</strong> .............................................</span>
+    </div>
+    <div class="candidate-row" style="margin-bottom: 0;">
+      <span><strong>Index No:</strong> ....................................................................................</span>
+      <span><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</span>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <strong>INSTRUCTIONS TO CANDIDATES:</strong><br/>
+    &bull; Total Questions: ${generatedQuestions.length}. Answer ALL questions.<br/>
+    &bull; Select the most appropriate answer for each question and mark a cross (&cross;) in the corresponding checkbox [&nbsp;&nbsp;].<br/>
+    &bull; Time Allowed: 45 Minutes. Marks will not be deducted for incorrect answers.
+  </div>
+
+  <div class="questions-section">
+    ${questionsHtml}
+  </div>
+
+  <div class="page-break"></div>
+
+  <div class="key-header">
+    <h2>Confidential - Instructor Answer Key &amp; Explanations</h2>
+    <p style="font-size: 8.5pt; color: #6b7280; margin: 4px 0 0 0;">(For Examiner &amp; Grader Use Only &mdash; Do Not Distribute to Students)</p>
+  </div>
+
+  <table class="key-table">
+    <thead>
+      <tr>
+        <th style="width: 10%; text-align: center;">Question</th>
+        <th style="width: 30%;">Correct Answer</th>
+        <th style="width: 60%;">Rationale / Source Chunk Explanation</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${answerKeyHtml}
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(htmlDoc);
+    printWindow.document.close();
   };
 
   // Priority 30: Save quiz handler
@@ -838,15 +1190,30 @@ const AIQuizGenerationPage = () => {
                 )}
               </button>
               <button
+                onClick={handleDownloadExamPaper}
+                disabled={generatedQuestions.length === 0}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  isDark 
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+                title="Open formatted A4 university exam paper printable view with answer key"
+              >
+                <Printer size={16} />
+                <span>Print Exam Paper</span>
+              </button>
+              <button
                 onClick={handleDownloadQuiz}
+                disabled={generatedQuestions.length === 0}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
                   isDark 
                     ? 'bg-slate-700 hover:bg-slate-600 text-white' 
                     : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
                 }`}
+                title="Download raw question text file"
               >
                 <Download size={16} />
-                <span>Download</span>
+                <span>TXT</span>
               </button>
             </div>
           </div>
@@ -871,196 +1238,393 @@ const AIQuizGenerationPage = () => {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
-              className={`rounded-xl p-5 backdrop-blur-md ${
-                isDark 
-                  ? 'bg-slate-800/40 border border-white/10' 
-                  : 'bg-white/40 border border-gray-200'
+              className={`rounded-xl p-5 backdrop-blur-md transition-all ${
+                editingIndex === index
+                  ? isDark
+                    ? 'bg-slate-800/90 border-2 border-indigo-500 shadow-lg shadow-indigo-500/10'
+                    : 'bg-white border-2 border-indigo-500 shadow-lg shadow-indigo-500/10'
+                  : isDark 
+                    ? 'bg-slate-800/40 border border-white/10' 
+                    : 'bg-white/40 border border-gray-200'
               }`}
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                      isDark ? 'bg-indigo-600/20 text-indigo-400' : 'bg-indigo-100 text-indigo-700'
-                    }`}>
-                      Q{index + 1}
+              {editingIndex === index ? (
+                /* Inline Edit Mode */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-gray-700/50">
+                    <span className="text-sm font-semibold text-indigo-400 flex items-center gap-1.5">
+                      <Edit3 size={16} /> Edit Question #{index + 1}
                     </span>
-                    <CheckCircle size={16} className="text-emerald-400" />
-                    {/* Priority 31: Difficulty Badge */}
-                    {getDifficultyBadge(item.difficulty)}
-                    {/* Question Type Badge */}
-                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                      item.question_type === 'mcq'
-                        ? `${isDark ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-700'}`
-                        : `${isDark ? 'bg-purple-600/20 text-purple-400' : 'bg-purple-100 text-purple-700'}`
-                    }`}>
-                      {item.question_type === 'mcq' ? 'MCQ' : 'True/False'}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <select
+                        value={editFormData.difficulty}
+                        onChange={(e) => setEditFormData({ ...editFormData, difficulty: e.target.value })}
+                        className={`text-xs px-2.5 py-1 rounded-md border font-medium ${
+                          isDark ? 'bg-slate-900 border-slate-700 text-gray-200' : 'bg-gray-100 border-gray-300 text-gray-800'
+                        }`}
+                      >
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                      <select
+                        value={editFormData.question_type}
+                        onChange={(e) => setEditFormData({ ...editFormData, question_type: e.target.value })}
+                        className={`text-xs px-2.5 py-1 rounded-md border font-medium ${
+                          isDark ? 'bg-slate-900 border-slate-700 text-gray-200' : 'bg-gray-100 border-gray-300 text-gray-800'
+                        }`}
+                      >
+                        <option value="mcq">MCQ (4 Options)</option>
+                        <option value="true_false">True / False</option>
+                      </select>
+                    </div>
                   </div>
-                  <p className={`text-lg font-medium mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {item.question_text || item.question || 'No question text available'}
-                  </p>
-                  
-                  {/* Options for MCQ */}
-                  {(item.type === 'mcq' || item.question_type === 'mcq' || item.question_type === 'multiple_choice' || (!item.type && !item.question_type && Array.isArray(item.options))) && Array.isArray(item.options) && item.options.length > 0 && (
-                    <div className={`p-4 rounded-xl mb-3 border ${
-                      isDark ? 'bg-slate-900/60 border-slate-700/60' : 'bg-gray-50 border-gray-200'
-                    }`}>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-2.5 text-gray-400">
-                        Options
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                        {item.options.map((option, optIndex) => {
-                          const optLetter = String.fromCharCode(65 + optIndex);
-                          const ca = String(item.correct_answer || '').trim();
-                          const optText = String(option || '').trim();
-                          const isCorrect = 
-                            (ca && optText && ca.toLowerCase() === optText.toLowerCase()) ||
-                            (ca && ca.toUpperCase() === optLetter) ||
-                            (ca && ca.toUpperCase().startsWith(`OPTION ${optLetter}`)) ||
-                            (ca && ca.toUpperCase().startsWith(`${optLetter}.`));
 
+                  {/* Question Stem Input */}
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">
+                      Question Text:
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={editFormData.question}
+                      onChange={(e) => setEditFormData({ ...editFormData, question: e.target.value })}
+                      className={`w-full p-3 rounded-lg border text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                      placeholder="Enter question text..."
+                    />
+                  </div>
+
+                  {/* Options Editor */}
+                  {editFormData.question_type === 'mcq' ? (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">
+                        Options (Mark radio button for the correct answer):
+                      </label>
+                      <div className="space-y-2">
+                        {editFormData.options.map((opt, optIdx) => {
+                          const letter = String.fromCharCode(65 + optIdx);
+                          const isSelected = editFormData.correct_answer === opt;
                           return (
-                            <div
-                              key={optIndex}
-                              className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm transition-all ${
-                                isCorrect
-                                  ? isDark
-                                    ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-200 font-medium shadow-sm shadow-emerald-950/20'
-                                    : 'bg-emerald-50 border-emerald-400 text-emerald-900 font-medium shadow-sm'
-                                  : isDark
-                                    ? 'bg-slate-800/40 border-slate-700/40 text-gray-300'
-                                    : 'bg-white border-gray-200 text-gray-700'
-                              }`}
-                            >
-                              <span className={`w-6 h-6 flex items-center justify-center rounded-md font-mono text-xs font-bold shrink-0 ${
-                                isCorrect
-                                  ? 'bg-emerald-500 text-white shadow-sm'
-                                  : isDark ? 'bg-slate-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                              }`}>
-                                {optLetter}
-                              </span>
-                              <span className="flex-1 break-words leading-relaxed">{option || 'No option text'}</span>
-                              {isCorrect && (
-                                <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-semibold shrink-0 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                                  <CheckCircle size={13} className="text-emerald-400" /> Correct
+                            <div key={optIdx} className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditFormData({ ...editFormData, correct_answer: opt })}
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
+                                  isSelected 
+                                    ? 'bg-emerald-500 text-white ring-2 ring-emerald-400 ring-offset-1' 
+                                    : isDark ? 'bg-slate-700 text-gray-300 hover:bg-slate-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                                title="Click to mark as correct answer"
+                              >
+                                {letter}
+                              </button>
+                              <input
+                                type="text"
+                                value={opt}
+                                onChange={(e) => {
+                                  const newOpts = [...editFormData.options];
+                                  const oldVal = newOpts[optIdx];
+                                  newOpts[optIdx] = e.target.value;
+                                  const updatedCorrect = editFormData.correct_answer === oldVal ? e.target.value : editFormData.correct_answer;
+                                  setEditFormData({
+                                    ...editFormData,
+                                    options: newOpts,
+                                    correct_answer: updatedCorrect
+                                  });
+                                }}
+                                className={`flex-1 p-2.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                                  isSelected
+                                    ? isDark ? 'bg-emerald-950/30 border-emerald-500/60 text-white font-medium' : 'bg-emerald-50 border-emerald-400 text-gray-900 font-medium'
+                                    : isDark ? 'bg-slate-900 border-slate-700 text-gray-200' : 'bg-white border-gray-300 text-gray-900'
+                                }`}
+                                placeholder={`Option ${letter}`}
+                              />
+                              {isSelected && (
+                                <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1 shrink-0 px-2 py-1 bg-emerald-500/10 rounded">
+                                  <Check size={14} /> Correct
                                 </span>
                               )}
                             </div>
                           );
                         })}
                       </div>
-
-                      {/* Explicit Correct Answer Banner */}
-                      {item.correct_answer && (
-                        <div className={`mt-3 pt-2.5 border-t flex flex-wrap items-center gap-2 text-sm ${
-                          isDark ? 'border-slate-800' : 'border-gray-200'
-                        }`}>
-                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Correct Answer:</span>
-                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
-                            <CheckCircle size={14} className="text-emerald-400" />
-                            {item.correct_answer}
-                          </span>
-                        </div>
-                      )}
                     </div>
-                  )}
-
-                  {/* Options for True/False */}
-                  {(item.type === 'true_false' || item.question_type === 'true_false' || item.question_type === 'true/false') && (
-                    <div className={`p-4 rounded-xl mb-3 border ${
-                      isDark ? 'bg-slate-900/60 border-slate-700/60' : 'bg-gray-50 border-gray-200'
-                    }`}>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-2.5 text-gray-400">
-                        Options
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">
+                        Select Correct Answer:
+                      </label>
+                      <div className="flex gap-4">
+                        {['True', 'False'].map((tf) => (
+                          <button
+                            key={tf}
+                            type="button"
+                            onClick={() => setEditFormData({ ...editFormData, correct_answer: tf })}
+                            className={`px-5 py-2.5 rounded-lg font-semibold text-sm border transition-all ${
+                              editFormData.correct_answer === tf
+                                ? 'bg-emerald-500 text-white border-emerald-400 shadow-sm'
+                                : isDark ? 'bg-slate-800 text-gray-300 border-slate-700 hover:bg-slate-700' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                            }`}
+                          >
+                            {tf}
+                          </button>
+                        ))}
                       </div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {['True', 'False'].map((option) => {
-                          const isCorrect = String(option).toLowerCase() === String(item.correct_answer || '').toLowerCase();
-                          return (
-                            <div
-                              key={option}
-                              className={`flex items-center justify-between p-3 rounded-lg border text-sm transition-all ${
-                                isCorrect
-                                  ? isDark
-                                    ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-200 font-medium'
-                                    : 'bg-emerald-50 border-emerald-400 text-emerald-900 font-medium'
-                                  : isDark
-                                    ? 'bg-slate-800/40 border-slate-700/40 text-gray-300'
-                                    : 'bg-white border-gray-200 text-gray-700'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className={`w-6 h-6 flex items-center justify-center rounded-md text-xs font-bold ${
-                                  isCorrect ? 'bg-emerald-500 text-white' : isDark ? 'bg-slate-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                                }`}>
-                                  {option === 'True' ? '✓' : '✗'}
-                                </span>
-                                <span className="font-medium">{option}</span>
-                              </div>
-                              {isCorrect && (
-                                <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                                  <CheckCircle size={13} className="text-emerald-400" /> Correct
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Explicit Correct Answer Banner */}
-                      {item.correct_answer && (
-                        <div className={`mt-3 pt-2.5 border-t flex flex-wrap items-center gap-2 text-sm ${
-                          isDark ? 'border-slate-800' : 'border-gray-200'
-                        }`}>
-                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Correct Answer:</span>
-                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
-                            <CheckCircle size={14} className="text-emerald-400" />
-                            {String(item.correct_answer)}
-                          </span>
-                        </div>
-                      )}
                     </div>
                   )}
 
-                  {/* Explanation */}
-                  {item.explanation && (
-                    <div className={`text-sm p-3 rounded-lg mb-3 ${
-                      isDark ? 'bg-slate-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      <span className="font-medium">Explanation:</span> {item.explanation}
-                    </div>
-                  )}
+                  {/* Explanation Input */}
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">
+                      Educational Explanation:
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editFormData.explanation}
+                      onChange={(e) => setEditFormData({ ...editFormData, explanation: e.target.value })}
+                      className={`w-full p-2.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                      placeholder="Why is this answer correct? Reference the source text..."
+                    />
+                  </div>
 
-                  {/* Relevance Score */}
-                  {item.relevance_score && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className={`font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                        Relevance Score:
-                      </span>
-                      <div className="flex-1 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-emerald-500 h-2 rounded-full" 
-                          style={{ width: `${item.relevance_score * 100}%` }}
-                        />
-                      </div>
-                      <span className={`font-medium ${item.relevance_score > 0.8 ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                        {Math.round(item.relevance_score * 100)}%
-                      </span>
-                    </div>
-                  )}
+                  {/* Save / Cancel Action Bar */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-700/40">
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isDark ? 'bg-slate-700 hover:bg-slate-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                      }`}
+                    >
+                      <X size={15} /> Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                    >
+                      <Check size={15} /> Save Question
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => handleCopyQuestion(item.question || '')}
-                  className={`p-2 rounded-lg transition-all ${
-                    isDark 
-                      ? 'bg-slate-700 hover:bg-slate-600 text-white' 
-                      : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
-                  }`}
-                >
-                  <Copy size={16} />
-                </button>
-              </div>
+              ) : (
+                /* Normal View Mode */
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`px-2 py-1 rounded-md text-xs font-medium ${
+                        isDark ? 'bg-indigo-600/20 text-indigo-400' : 'bg-indigo-100 text-indigo-700'
+                      }`}>
+                        Q{index + 1}
+                      </span>
+                      <CheckCircle size={16} className="text-emerald-400" />
+                      {/* Priority 31: Difficulty Badge */}
+                      {getDifficultyBadge(item.difficulty)}
+                      {/* Question Type Badge */}
+                      <span className={`px-2 py-1 rounded-md text-xs font-medium ${
+                        item.question_type === 'mcq'
+                          ? `${isDark ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-700'}`
+                          : `${isDark ? 'bg-purple-600/20 text-purple-400' : 'bg-purple-100 text-purple-700'}`
+                      }`}>
+                        {item.question_type === 'mcq' ? 'MCQ' : 'True/False'}
+                      </span>
+                    </div>
+                    <p className={`text-lg font-medium mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                      {item.question_text || item.question || 'No question text available'}
+                    </p>
+                    
+                    {/* Options for MCQ */}
+                    {(item.type === 'mcq' || item.question_type === 'mcq' || item.question_type === 'multiple_choice' || (!item.type && !item.question_type && Array.isArray(item.options))) && Array.isArray(item.options) && item.options.length > 0 && (
+                      <div className={`p-4 rounded-xl mb-3 border ${
+                        isDark ? 'bg-slate-900/60 border-slate-700/60' : 'bg-gray-50 border-gray-200'
+                      }`}>
+                        <div className="text-xs font-semibold uppercase tracking-wider mb-2.5 text-gray-400">
+                          Options
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                          {item.options.map((option, optIndex) => {
+                            const optLetter = String.fromCharCode(65 + optIndex);
+                            const ca = String(item.correct_answer || '').trim();
+                            const optText = String(option || '').trim();
+                            const isCorrect = 
+                              (ca && optText && ca.toLowerCase() === optText.toLowerCase()) ||
+                              (ca && ca.toUpperCase() === optLetter) ||
+                              (ca && ca.toUpperCase().startsWith(`OPTION ${optLetter}`)) ||
+                              (ca && ca.toUpperCase().startsWith(`${optLetter}.`));
+
+                            return (
+                              <div
+                                key={optIndex}
+                                className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm transition-all ${
+                                  isCorrect
+                                    ? isDark
+                                      ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-200 font-medium shadow-sm shadow-emerald-950/20'
+                                      : 'bg-emerald-50 border-emerald-400 text-emerald-900 font-medium shadow-sm'
+                                    : isDark
+                                      ? 'bg-slate-800/40 border-slate-700/40 text-gray-300'
+                                      : 'bg-white border-gray-200 text-gray-700'
+                                }`}
+                              >
+                                <span className={`w-6 h-6 flex items-center justify-center rounded-md font-mono text-xs font-bold shrink-0 ${
+                                  isCorrect
+                                    ? 'bg-emerald-500 text-white shadow-sm'
+                                    : isDark ? 'bg-slate-700 text-gray-300' : 'bg-gray-200 text-gray-700'
+                                }`}>
+                                  {optLetter}
+                                </span>
+                                <span className="flex-1 break-words leading-relaxed">{option || 'No option text'}</span>
+                                {isCorrect && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-semibold shrink-0 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                    <CheckCircle size={13} className="text-emerald-400" /> Correct
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Explicit Correct Answer Banner */}
+                        {item.correct_answer && (
+                          <div className={`mt-3 pt-2.5 border-t flex flex-wrap items-center gap-2 text-sm ${
+                            isDark ? 'border-slate-800' : 'border-gray-200'
+                          }`}>
+                            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Correct Answer:</span>
+                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
+                              <CheckCircle size={14} className="text-emerald-400" />
+                              {item.correct_answer}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Options for True/False */}
+                    {(item.type === 'true_false' || item.question_type === 'true_false' || item.question_type === 'true/false') && (
+                      <div className={`p-4 rounded-xl mb-3 border ${
+                        isDark ? 'bg-slate-900/60 border-slate-700/60' : 'bg-gray-50 border-gray-200'
+                      }`}>
+                        <div className="text-xs font-semibold uppercase tracking-wider mb-2.5 text-gray-400">
+                          Options
+                        </div>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {['True', 'False'].map((option) => {
+                            const isCorrect = String(option).toLowerCase() === String(item.correct_answer || '').toLowerCase();
+                            return (
+                              <div
+                                key={option}
+                                className={`flex items-center justify-between p-3 rounded-lg border text-sm transition-all ${
+                                  isCorrect
+                                    ? isDark
+                                      ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-200 font-medium'
+                                      : 'bg-emerald-50 border-emerald-400 text-emerald-900 font-medium'
+                                    : isDark
+                                      ? 'bg-slate-800/40 border-slate-700/40 text-gray-300'
+                                      : 'bg-white border-gray-200 text-gray-700'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-6 h-6 flex items-center justify-center rounded-md text-xs font-bold ${
+                                    isCorrect ? 'bg-emerald-500 text-white' : isDark ? 'bg-slate-700 text-gray-300' : 'bg-gray-200 text-gray-700'
+                                  }`}>
+                                    {option === 'True' ? '✓' : '✗'}
+                                  </span>
+                                  <span className="font-medium">{option}</span>
+                                </div>
+                                {isCorrect && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                    <CheckCircle size={13} className="text-emerald-400" /> Correct
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Explicit Correct Answer Banner */}
+                        {item.correct_answer && (
+                          <div className={`mt-3 pt-2.5 border-t flex flex-wrap items-center gap-2 text-sm ${
+                            isDark ? 'border-slate-800' : 'border-gray-200'
+                          }`}>
+                            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Correct Answer:</span>
+                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
+                              <CheckCircle size={14} className="text-emerald-400" />
+                              {String(item.correct_answer)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Explanation */}
+                    {item.explanation && (
+                      <div className={`text-sm p-3 rounded-lg mb-3 ${
+                        isDark ? 'bg-slate-900/50 text-gray-400' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        <span className="font-medium">Explanation:</span> {item.explanation}
+                      </div>
+                    )}
+
+                    {/* Relevance Score */}
+                    {item.relevance_score && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className={`font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Relevance Score:
+                        </span>
+                        <div className="flex-1 bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-emerald-500 h-2 rounded-full" 
+                            style={{ width: `${item.relevance_score * 100}%` }}
+                          />
+                        </div>
+                        <span className={`font-medium ${item.relevance_score > 0.8 ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                          {Math.round(item.relevance_score * 100)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions Column: Edit, Copy, Delete */}
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleStartEdit(index)}
+                      className={`p-2 rounded-lg transition-all ${
+                        isDark 
+                          ? 'bg-slate-700 hover:bg-indigo-600 text-white' 
+                          : 'bg-gray-200 hover:bg-indigo-500 hover:text-white text-gray-800'
+                      }`}
+                      title="Edit this question"
+                    >
+                      <Edit3 size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleCopyQuestion(item.question_text || item.question || '')}
+                      className={`p-2 rounded-lg transition-all ${
+                        isDark 
+                          ? 'bg-slate-700 hover:bg-slate-600 text-white' 
+                          : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                      }`}
+                      title="Copy question text"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteQuestion(index)}
+                      className={`p-2 rounded-lg transition-all ${
+                        isDark 
+                          ? 'bg-slate-700 hover:bg-rose-600 text-white' 
+                          : 'bg-gray-200 hover:bg-rose-500 hover:text-white text-gray-800'
+                      }`}
+                      title="Delete question"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           ))}
         </motion.div>

@@ -27,4 +27,8 @@ export const userAPI = {
 
   removeAvatar: () =>
     axiosInstance.delete('/users/me/avatar'),
+
+  getBadges: () =>
+    axiosInstance.get('/gamification/badges/me'),
 };
+

@@ -76,12 +76,13 @@ except ImportError:
     print("⚠️ Quiz storage and difficulty categorization not available. Install with required dependencies.")
 
 from database import engine, Base, get_db
-from models import User, Quiz, Question, QuizAttempt, PDF, Battle, BattleParticipant, Leaderboard
+from models import User, Quiz, Question, QuizAttempt, PDF, PDFChunk, Battle, BattleParticipant, Leaderboard
 from battle_leaderboard_service import (
     create_battle, join_battle, complete_battle,
     get_leaderboard_data, get_user_profile_data, get_user_badges_data,
     update_leaderboard_from_quiz_result, update_leaderboard_from_battle_result,
-    send_battle_invitation, get_invitations_for_user, get_or_create_leaderboard
+    send_battle_invitation, get_invitations_for_user, get_or_create_leaderboard,
+    quick_match, get_battle_live_state, send_battle_emote, cancel_battle
 )
 from schemas import (
     UserCreate, UserResponse,
@@ -232,9 +233,10 @@ if QUIZ_STORAGE_AVAILABLE:
 
 
 # Mount uploads directory for static files (e.g., avatars)
-os.makedirs("uploads", exist_ok=True)
-os.makedirs("uploads/avatars", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+os.makedirs(os.path.join(UPLOADS_DIR, "avatars"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 # ==================== Root & Health Endpoints ====================
@@ -296,7 +298,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 # ==================== Authentication Endpoints (v1 compatibility) ====================
 
-@app.post("/api/v1/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/v1/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register_user(user: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user - v1 API for frontend compatibility"""
     print(f"📝 Registration request received: {user}")  # Debug logging
@@ -326,9 +328,31 @@ def register_user(user: RegisterRequest, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    get_or_create_leaderboard(db, new_user.id)
 
-    print(f"✅ User registered successfully: {new_user.username}")  # Debug logging
-    return new_user
+    access_token = f"token_{new_user.id}_{new_user.username}"
+    first_name = new_user.first_name or (new_user.username.split(" ")[0] if " " in new_user.username else new_user.username)
+    last_name = new_user.last_name or (new_user.username.split(" ")[1] if " " in new_user.username else "")
+
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse(
+            id=new_user.id,
+            username=new_user.username,
+            email=new_user.email,
+            created_at=new_user.created_at,
+            first_name=new_user.first_name,
+            last_name=new_user.last_name,
+            firstName=first_name,
+            lastName=last_name,
+            bio=new_user.bio,
+            avatar=new_user.avatar,
+            role=new_user.role or ("admin" if new_user.id == 1 else "student"),
+            is_active=bool(new_user.is_active if new_user.is_active is not None else True),
+            isActive=bool(new_user.is_active if new_user.is_active is not None else True)
+        )
+    )
 
 
 @app.post("/api/v1/auth/login", response_model=TokenResponse)
@@ -426,8 +450,7 @@ def get_authenticated_user_id(authorization: Optional[str] = Header(None), db: S
                 return int(parts[-1])
         elif token.isdigit():
             return int(token)
-    user = db.query(User).first()
-    return user.id if user else 1
+    return 0  # Unauthenticated — return 0 so no data leaks
 
 
 @app.post("/api/v1/auth/logout")
@@ -532,12 +555,12 @@ def get_quizzes(
     """Get all non-battle quizzes with question count and difficulty (user isolated)"""
     user_id = get_authenticated_user_id(authorization, db)
     query = db.query(Quiz).filter(Quiz.category != "battle")
-    if user_id != 1:
-        query = query.filter((Quiz.creator_id == user_id) | (Quiz.creator_id == 1))
+    if user_id > 0:
+        query = query.filter(Quiz.creator_id == user_id)
     else:
-        query = query.filter(Quiz.creator_id == 1)
+        query = query.filter(Quiz.creator_id == -1)
 
-    quizzes = query.offset(skip).limit(limit).all()
+    quizzes = query.order_by(Quiz.created_at.desc()).offset(skip).limit(limit).all()
 
     quiz_responses = []
     for quiz in quizzes:
@@ -766,7 +789,7 @@ def submit_attempt_v1(attempt_id: int, data: dict, db: Session = Depends(get_db)
     attempt.total_questions = total_q
     attempt.answers = answers_dict
     attempt.time_spent = data.get("timeTaken", 45)
-    attempt.completed_at = datetime.utcnow()
+    attempt.completed_at = datetime.datetime.utcnow()
     db.commit()
 
     # Update gamified Leaderboard entity
@@ -823,10 +846,10 @@ def get_performance_stats_v1(
     """Get user performance statistics for adaptive learning and analytics"""
     try:
         user_id = get_authenticated_user_id(authorization, db)
-        # Non-battle quizzes only (user's quizzes + platform seeds)
+        # Non-battle quizzes only (user's own quizzes)
         total_quizzes = db.query(Quiz).filter(
             Quiz.category != "battle",
-            (Quiz.creator_id == user_id) | (Quiz.creator_id == 1)
+            Quiz.creator_id == user_id
         ).count()
         attempts = db.query(QuizAttempt).filter(
             QuizAttempt.user_id == user_id
@@ -865,7 +888,7 @@ def get_performance_stats_v1(
                 "score": score_val,
                 "totalQuestions": a.total_questions or 10,
                 "timeSpent": a.time_spent or 40,
-                "completedAt": a.completed_at.isoformat() if a.completed_at else datetime.utcnow().isoformat(),
+                "completedAt": a.completed_at.isoformat() if a.completed_at else datetime.datetime.utcnow().isoformat(),
                 "adaptiveStatus": "upgraded" if score_val >= 80 else ("maintained" if score_val >= 50 else "downgraded")
             })
 
@@ -1201,7 +1224,7 @@ if ADAPTIVE_AVAILABLE:
             # Adjust difficulty
             new_difficulty = adaptive_manager.adjust_quiz_difficulty_during_attempt(
                 quiz_id=quiz_id,
-                user_id=quiz.user_id,
+                user_id=quiz.creator_id,
                 recent_answers=recent_answers,
                 db=db
             )
@@ -1376,6 +1399,7 @@ def get_gamification_profile(
 
 
 @app.get("/api/v1/gamification/badges/me")
+@app.get("/api/v1/users/badges")
 def get_gamification_badges(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
@@ -1479,13 +1503,27 @@ async def upload_pdf(
         original_name=pdf.filename,
         file_path=file_path,
         file_size=file_size,
-        status="completed",  # Mark as completed for now (actual processing would be async)
+        status="processing",
         chunk_count=0,
         user_id=user_id
     )
     db.add(new_pdf)
     db.commit()
     db.refresh(new_pdf)
+
+    # Automatically vectorize PDF and persist chunks + embeddings into Vector DB
+    if rag_service:
+        try:
+            persisted_chunks = rag_service.index_and_persist_pdf(new_pdf.id, file_path, db)
+            new_pdf.chunk_count = len(persisted_chunks)
+            new_pdf.status = "completed"
+            db.commit()
+            db.refresh(new_pdf)
+            print(f"✅ PDF indexed into Persistent Vector DB: {len(persisted_chunks)} chunks for user {user_id}")
+        except Exception as e:
+            print(f"⚠️ Vector indexing warning on upload: {e}")
+            new_pdf.status = "completed"
+            db.commit()
 
     print(f"✅ PDF uploaded and saved to database for user {user_id}: {pdf.filename}")
 
@@ -1501,14 +1539,9 @@ def get_pdfs(
 ):
     """Get all PDFs for authenticated user (user isolated)"""
     user_id = get_authenticated_user_id(authorization, db)
-    if user_id == 1:
-        pdfs = db.query(PDF).filter(
-            (PDF.user_id == 1) | (PDF.user_id.is_(None))
-        ).order_by(PDF.created_at.desc()).offset(skip).limit(limit).all()
-    else:
-        pdfs = db.query(PDF).filter(
-            PDF.user_id == user_id
-        ).order_by(PDF.created_at.desc()).offset(skip).limit(limit).all()
+    pdfs = db.query(PDF).filter(
+        PDF.user_id == user_id
+    ).order_by(PDF.created_at.desc()).offset(skip).limit(limit).all()
     return pdfs
 
 
@@ -1523,66 +1556,68 @@ def get_pdf_by_id(pdf_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/pdfs/{pdf_id}/chunks")
 def get_pdf_chunks(pdf_id: int, db: Session = Depends(get_db)):
-    """Get PDF chunks - v1 API for frontend compatibility"""
+    """
+    Get persistent PDF chunks with vector embedding metadata directly from Vector Database.
+    Demonstrates persistent RAG chunk storage across backend restarts.
+    """
     pdf = db.query(PDF).filter(PDF.id == pdf_id).first()
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
-    
-    # Try to read the PDF file and extract text content
-    try:
-        if pdf.file_path and os.path.exists(pdf.file_path):
-            # Try to read the PDF file and extract text
-            try:
-                import PyPDF2
-                with open(pdf.file_path, 'rb') as file:
-                    pdf_reader = PyPDF2.PdfReader(file)
-                    text_content = ""
-                    for page in pdf_reader.pages:
-                        text_content += page.extract_text()
-                    
-                    # Split into chunks
-                    chunk_size = 500
-                    words = text_content.split()
-                    chunks = []
-                    for i in range(0, len(words), chunk_size):
-                        chunk = " ".join(words[i:i + chunk_size])
-                        chunks.append({
-                            "content": chunk,
-                            "text": chunk,
-                            "chunk_index": i // chunk_size
-                        })
-                    
-                    return {
-                        "pdf_id": pdf.id,
-                        "pdf_name": pdf.original_name,
-                        "total_chunks": len(chunks),
-                        "chunks": chunks
-                    }
-            except ImportError:
-                # PyPDF2 not available, return error message
-                return {
-                    "pdf_id": pdf.id,
-                    "pdf_name": pdf.original_name,
-                    "error": "PyPDF2 not installed. Install with: pip install PyPDF2",
-                    "chunks": []
+
+    # 1. First check Persistent Vector DB (PDFChunk table)
+    db_chunks = db.query(PDFChunk).filter(PDFChunk.pdf_id == pdf_id).order_by(PDFChunk.chunk_index).all()
+    if db_chunks and len(db_chunks) > 0:
+        return {
+            "pdf_id": pdf.id,
+            "pdf_name": pdf.original_name,
+            "total_chunks": len(db_chunks),
+            "storage_type": "persistent_vector_sqlite",
+            "chunks": [
+                {
+                    "id": c.id,
+                    "chunk_index": c.chunk_index,
+                    "content": c.content,
+                    "text": c.content,
+                    "token_count": c.token_count,
+                    "has_embedding": bool(c.embedding),
+                    "embedding_dim": len(c.embedding) if c.embedding else 0
                 }
-            except Exception as e:
-                # Error reading PDF
-                return {
-                    "pdf_id": pdf.id,
-                    "pdf_name": pdf.original_name,
-                    "error": f"Failed to read PDF: {str(e)}",
-                    "chunks": []
-                }
-        else:
+                for c in db_chunks
+            ]
+        }
+
+    # 2. If not indexed yet and file exists, index it persistently right now
+    if pdf.file_path and os.path.exists(pdf.file_path) and rag_service:
+        try:
+            persisted = rag_service.index_and_persist_pdf(pdf.id, pdf.file_path, db)
             return {
                 "pdf_id": pdf.id,
                 "pdf_name": pdf.original_name,
-                "error": "PDF file not found on server",
-                "chunks": []
+                "total_chunks": len(persisted),
+                "storage_type": "persistent_vector_sqlite",
+                "chunks": [
+                    {
+                        "id": c.id,
+                        "chunk_index": c.chunk_index,
+                        "content": c.content,
+                        "text": c.content,
+                        "token_count": c.token_count,
+                        "has_embedding": bool(c.embedding),
+                        "embedding_dim": len(c.embedding) if c.embedding else 0
+                    }
+                    for c in persisted
+                ]
             }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get PDF chunks: {str(e)}")
+        except Exception as e:
+            print(f"⚠️ Indexing error in get_pdf_chunks: {e}")
+
+    return {
+        "pdf_id": pdf.id,
+        "pdf_name": pdf.original_name,
+        "total_chunks": 0,
+        "chunks": []
+    }
+
 
 
 @app.delete("/api/v1/pdfs/{pdf_id}")
@@ -1601,6 +1636,48 @@ def delete_pdf(pdf_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "PDF deleted successfully"}
+
+
+@app.post("/api/v1/pdfs/{pdf_id}/search")
+def search_pdf_vectors(
+    pdf_id: int,
+    query_data: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    RAG Semantic Vector Search Endpoint (Priority 02 / EC06 Requirement):
+    Retrieves top-K most relevant document passages from SQLite Persistent Vector Store
+    using 512-dim Cosine Similarity.
+    """
+    global rag_service
+    if not rag_service:
+        try:
+            rag_service = RAGQuizService()
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"RAG Service could not be loaded: {e}")
+
+    query = query_data.get("query", "").strip()
+    top_k = int(query_data.get("top_k", 5))
+    if not query:
+        raise HTTPException(status_code=400, detail="Query string is required")
+
+    results = rag_service.retrieve_relevant_chunks(
+        query=query,
+        pdf_id=pdf_id,
+        db=db,
+        top_k=top_k
+    )
+
+    return {
+        "success": True,
+        "pdf_id": pdf_id,
+        "query": query,
+        "top_k": top_k,
+        "retrieval_strategy": "cosine_similarity_t5_512dim",
+        "vector_store": "sqlite_pdf_chunks_persistent",
+        "results_count": len(results),
+        "results": results
+    }
 
 
 # ==================== PDF Upload and Quiz Generation Endpoint ====================
@@ -1723,9 +1800,14 @@ async def generate_quiz_from_existing_pdf(request: dict, db: Session = Depends(g
     try:
         print(f"📄 Using existing PDF: {file_path}")
         
-        # Generate quiz using RAG service
-        print(f"🤖 Generating quiz questions from existing PDF...")
-        generated_questions = rag_service.generate_quiz_from_pdf(file_path)
+        # Generate quiz using RAG service with persistent vector store
+        print(f"🤖 Generating quiz questions from existing PDF #{pdf_id}...")
+        generated_questions = rag_service.generate_quiz_from_pdf(
+            pdf_path=file_path,
+            count=10,
+            pdf_id=pdf.id if pdf else pdf_id,
+            db=db
+        )
         
         print(f"✅ Generated {len(generated_questions)} questions")
         
@@ -1794,7 +1876,8 @@ def get_user_profile(
         "winStreak": lb.win_streak,
         "battlesWon": lb.battles_won,
         "battlesPlayed": lb.battles_played,
-        "badgesCount": len(lb.badges) if isinstance(lb.badges, list) else 0
+        "badgesCount": len(lb.badges) if isinstance(lb.badges, list) else 0,
+        "badges": lb.badges if isinstance(lb.badges, list) else []
     }
 
     return {
@@ -1821,6 +1904,7 @@ def update_user_profile(
     last_name = data.get("lastName") or data.get("last_name")
     bio = data.get("bio")
     email = data.get("email")
+    avatar = data.get("avatar")
 
     if first_name is not None:
         user.first_name = str(first_name).strip()
@@ -1828,6 +1912,8 @@ def update_user_profile(
         user.last_name = str(last_name).strip()
     if bio is not None:
         user.bio = str(bio).strip()
+    if avatar is not None:
+        user.avatar = str(avatar).strip()
     if email and str(email).strip():
         new_email = str(email).strip()
         existing = db.query(User).filter(User.email == new_email, User.id != user_id).first()
@@ -1919,7 +2005,7 @@ def get_user_activity(
             "type": "quiz",
             "title": q_title,
             "score": f"{a.score}%",
-            "date": a.completed_at.isoformat() if a.completed_at else datetime.utcnow().isoformat()
+            "date": a.completed_at.isoformat() if a.completed_at else datetime.datetime.utcnow().isoformat()
         })
 
     # 2. Battle matches
@@ -1937,7 +2023,7 @@ def get_user_activity(
             "type": "battle",
             "title": b_title,
             "score": score_label,
-            "date": (battle.completed_at or p.joined_at or datetime.utcnow()).isoformat() if battle else p.joined_at.isoformat()
+            "date": (battle.completed_at or p.joined_at or datetime.datetime.utcnow()).isoformat() if battle else p.joined_at.isoformat()
         })
 
     # Sort activities by date descending
@@ -1957,18 +2043,19 @@ async def upload_user_avatar(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    upload_dir = "uploads/avatars"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    upload_dir = os.path.join(base_dir, "uploads", "avatars")
     os.makedirs(upload_dir, exist_ok=True)
 
     ext = os.path.splitext(avatar.filename)[1] or ".png"
-    timestamp = int(datetime.utcnow().timestamp())
+    timestamp = int(datetime.datetime.utcnow().timestamp())
     avatar_filename = f"avatar_u{user_id}_{timestamp}{ext}"
     avatar_path = os.path.join(upload_dir, avatar_filename)
 
     with open(avatar_path, "wb") as buffer:
         shutil.copyfileobj(avatar.file, buffer)
 
-    avatar_url = f"http://localhost:8000/uploads/avatars/{avatar_filename}"
+    avatar_url = f"/uploads/avatars/{avatar_filename}"
     user.avatar = avatar_url
     db.commit()
     db.refresh(user)
@@ -2056,7 +2143,13 @@ def generate_quiz_custom(
         pdf = db.query(PDF).filter(PDF.id == pdf_id).first()
         if pdf and pdf.file_path and os.path.exists(pdf.file_path) and rag_service:
             try:
-                rag_questions = rag_service.generate_quiz_from_pdf(pdf.file_path)
+                rag_questions = rag_service.generate_quiz_from_pdf(
+                    pdf_path=pdf.file_path,
+                    count=question_count,
+                    difficulty=difficulty if difficulty != "random" else "medium",
+                    pdf_id=pdf.id,
+                    db=db
+                )
                 for q in rag_questions[:question_count]:
                     questions_list.append({
                         "question": q.get("question", "Question"),
@@ -2133,6 +2226,19 @@ def generate_quiz_custom(
 
 # ==================== Battle Mode Endpoints ====================
 
+@app.post("/api/v1/battle/quick-match")
+def quick_match_endpoint(
+    data: dict,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Skill-based matchmaking (|Δlvl| <= 1)"""
+    user_id = get_authenticated_user_id(authorization, db)
+    subject = data.get("subject", "General")
+    difficulty = data.get("difficulty", "medium")
+    return quick_match(db, user_id, subject, difficulty)
+
+
 @app.post("/api/v1/battle/create")
 @app.post("/api/v1/battle/create-quiz")
 def create_battle_session(
@@ -2206,8 +2312,9 @@ def join_battle_session(
     result = join_battle(db, battle_code_or_id=battle_id, user_id=user_id)
 
     if not result.get("success"):
+        status_code = status.HTTP_404_NOT_FOUND if result.get("error_type") == "not_found" else status.HTTP_400_BAD_REQUEST
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status_code,
             detail=result.get("message", "Unable to join battle")
         )
 
@@ -2218,7 +2325,8 @@ def join_battle_session(
         "battle_id": b.battle_id,
         "id": b.id,
         "participants_count": len(b.participants),
-        "status": b.status
+        "status": b.status,
+        "already_joined": result.get("already_joined", False)
     }
 
 
@@ -2248,23 +2356,46 @@ def submit_battle_answer(
     if not participant:
         raise HTTPException(status_code=403, detail="User is not a participant in this battle")
 
-    score_increment = data.get("score", 10)
+    score_increment = data.get("score", 0)
     submitted_answers = data.get("answers", {})
 
     participant.score += score_increment
     if submitted_answers:
-        curr_answers = participant.answers or {}
-        curr_answers.update(submitted_answers)
+        from sqlalchemy.orm.attributes import flag_modified
+        curr_answers = dict(participant.answers or {})
+        for k, v in submitted_answers.items():
+            curr_answers[str(k)] = v
         participant.answers = curr_answers
+        flag_modified(participant, "answers")
+
+    total_q = battle.total_rounds or (len(battle.questions_data) if battle.questions_data else 10)
+    if len(participant.answers or {}) >= total_q or data.get("is_finished"):
+        if not participant.completed_at:
+            participant.completed_at = datetime.datetime.utcnow()
 
     db.commit()
     db.refresh(participant)
+
+    # Check if all participants finished, auto-conclude battle
+    participants = db.query(BattleParticipant).filter(BattleParticipant.battle_id == battle.id).all()
+    all_done = (
+        len(participants) >= 1 and all(
+            (p.completed_at is not None or len(p.answers or {}) >= total_q)
+            for p in participants
+        )
+    )
+    if all_done and battle.status != "completed":
+        complete_battle(db, battle.id)
+        db.refresh(battle)
 
     return {
         "success": True,
         "battle_id": battle.battle_id,
         "user_id": user_id,
-        "current_score": participant.score
+        "current_score": participant.score,
+        "answers_count": len(participant.answers or {}),
+        "is_finished": participant.completed_at is not None or len(participant.answers or {}) >= total_q,
+        "battle_status": battle.status
     }
 
 
@@ -2286,6 +2417,44 @@ def complete_battle_endpoint(
 
     result = complete_battle(db, battle.id)
     return result
+
+
+@app.get("/api/v1/battle/users-search")
+def search_users_for_battle(
+    query: Optional[str] = "",
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Searches registered users in the database by username substring for live invitation suggestions.
+    Excludes the authenticated user. Returns top 15 matching users with their gamification levels.
+    """
+    my_user_id = get_authenticated_user_id(authorization, db)
+    q = (query or "").strip().lower()
+
+    query_filter = (User.id != my_user_id) if my_user_id > 0 else (User.id > 0)
+    if q:
+        query_filter = query_filter & (User.username.ilike(f"%{q}%") | User.email.ilike(f"%{q}%"))
+
+    users = db.query(User).filter(query_filter).order_by(User.username.asc()).limit(15).all()
+
+    results = []
+    for u in users:
+        lb = db.query(Leaderboard).filter(Leaderboard.user_id == u.id).first()
+        results.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "name": u.username,
+            "level": lb.level if lb else 1,
+            "totalPoints": lb.total_points if lb else 0,
+            "avatar": u.avatar or None
+        })
+
+    return {
+        "success": True,
+        "users": results
+    }
 
 
 @app.get("/api/v1/battle/{battle_id}")
@@ -2342,6 +2511,79 @@ def get_battle_by_id(
     }
 
 
+@app.post("/api/v1/battle/{battle_id}/start")
+def start_battle_endpoint(
+    battle_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Host triggers the battle to start. Changes status from 'waiting' to 'active'.
+    Both players transition simultaneously into the Battle Play arena.
+    """
+    user_id = get_authenticated_user_id(authorization, db)
+    battle = db.query(Battle).filter(
+        (Battle.battle_id == battle_id) | (Battle.id == (int(battle_id) if battle_id.isdigit() else -1))
+    ).first()
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle not found")
+
+    battle.status = "active"
+    db.commit()
+    db.refresh(battle)
+
+    return {
+        "success": True,
+        "battle_id": battle.battle_id,
+        "status": "active",
+        "message": "Battle started successfully by Host"
+    }
+
+
+@app.post("/api/v1/battle/{battle_id}/cancel")
+def cancel_battle_endpoint(
+    battle_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancels a waiting battle session (e.g., when player cancels matchmaking queue).
+    """
+    user_id = get_authenticated_user_id(authorization, db)
+    return cancel_battle(db, battle_id, user_id)
+
+
+@app.get("/api/v1/battle/{battle_id}/live-state")
+def get_battle_live_state_endpoint(
+    battle_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Real-time ultra-low latency live state polling for peer synchronization (800ms loop).
+    Returns answering status, current score, and incoming live emotes.
+    """
+    user_id = get_authenticated_user_id(authorization, db)
+    return get_battle_live_state(db, battle_id, user_id)
+
+
+@app.post("/api/v1/battle/{battle_id}/emote")
+def send_battle_emote_endpoint(
+    battle_id: str,
+    payload: dict,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Broadcasts a live reaction/emote (🔥, ⚡, 🤯, 👏, ⚔️) to peer player.
+    """
+    user_id = get_authenticated_user_id(authorization, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    username = user.username if user else "Player"
+    emote = payload.get("emote", "🔥")
+    return send_battle_emote(battle_id, user_id, username, emote)
+
+
 @app.post("/api/v1/battle/invite")
 def send_invitation_endpoint(
     data: dict,
@@ -2350,11 +2592,26 @@ def send_invitation_endpoint(
 ):
     """
     Sends an invitation message/notification to a friend for a Battle session.
+    Strictly validates that the recipient is an existing registered user.
     """
     user_id = get_authenticated_user_id(authorization, db)
     battle_id = data.get("battle_id")
-    friend_username = data.get("friend_username", "Player")
-    return send_battle_invitation(db, user_id, battle_id, friend_username)
+    friend_username = (data.get("friend_username") or "").strip()
+
+    if not friend_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please specify a valid friend's username"
+        )
+
+    result = send_battle_invitation(db, user_id, battle_id, friend_username)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("message", "User not found")
+        )
+
+    return result
 
 
 @app.get("/api/v1/battle/invitations")
@@ -2981,23 +3238,89 @@ def get_user_notifications(
 
     notifications = []
 
-    # 1. Battle invitations
+    now_utc_str = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # 1. Battle invitations (active pending only)
     invs = get_invitations_for_user(username)
+    inv_changed = False
     for inv in invs:
+        battle_code = inv.get("battle_id")
+        b = db.query(Battle).filter(
+            (Battle.battle_id == battle_code) | (Battle.id == (int(battle_code) if str(battle_code).isdigit() else -1))
+        ).first()
+
+        # If battle is already completed or cancelled, don't show as a pending challenge
+        if b and b.status in ["completed", "cancelled"]:
+            if inv.get("status") == "pending":
+                inv["status"] = b.status
+                inv_changed = True
+            continue
+
+        if inv.get("status") != "pending":
+            continue
+
         nid = f"inv_{inv.get('id', '1')}"
+        raw_inv_time = inv.get("created_at")
+        if raw_inv_time and not raw_inv_time.endswith("Z"):
+            raw_inv_time += "Z"
+
         notifications.append({
             "id": nid,
             "type": "battle",
             "title": "⚔️ Battle Arena Challenge!",
-            "message": f"{inv.get('from_username', 'A player')} challenged you to a Battle ({inv.get('battle_id')})!",
-            "target": f"/battle/{inv.get('battle_id')}/play",
-            "targetText": "Join Battle",
+            "message": f"{inv.get('from_username', 'A friend')} challenged you to a Battle ({inv.get('battle_id')})!",
+            "target": f"/battle?code={inv.get('battle_id')}",
+            "targetText": "Join Waiting Room",
             "isRead": (user_id, nid) in READ_NOTIFICATIONS,
-            "createdAt": inv.get("created_at") or datetime.datetime.utcnow().isoformat()
+            "createdAt": raw_inv_time or now_utc_str
         })
 
-    # 2. Level and streak milestone
+    if inv_changed:
+        save_persisted_invitations(ACTIVE_INVITATIONS)
+
+    # 2. Recent Battle Completed Results (last 2 completed battles for this user)
+    recent_bps = (
+        db.query(BattleParticipant)
+        .join(Battle, BattleParticipant.battle_id == Battle.id)
+        .filter(BattleParticipant.user_id == user_id, Battle.status == "completed")
+        .order_by(Battle.completed_at.desc())
+        .limit(2)
+        .all()
+    )
+    for bp in recent_bps:
+        bat = bp.battle
+        if not bat or not bat.completed_at:
+            continue
+        nid = f"battle_done_{bat.id}"
+        is_winner = bat.winner_id == user_id
+        is_draw = bat.winner_id is None and len(bat.participants) > 1
+        bat_time = bat.completed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        if is_draw:
+            b_title = f"🤝 Battle Draw ({bat.battle_id})"
+            b_msg = f"Match tied! You scored {bp.score} pts in '{bat.subject}'."
+        elif is_winner:
+            b_title = f"🏆 Battle Victory! ({bat.battle_id})"
+            b_msg = f"Victory! You won with {bp.score} pts against opponent in '{bat.subject}'."
+        else:
+            b_title = f"⚔️ Battle Finished ({bat.battle_id})"
+            b_msg = f"Good match! You scored {bp.score} pts in '{bat.subject}'."
+
+        notifications.append({
+            "id": nid,
+            "type": "battle",
+            "title": b_title,
+            "message": b_msg,
+            "target": f"/battle/{bat.battle_id}/play",
+            "targetText": "View Results",
+            "isRead": (user_id, nid) in READ_NOTIFICATIONS,
+            "createdAt": bat_time
+        })
+
+    # 3. Level and streak milestones (using actual leaderboard updated timestamp)
     lb = get_or_create_leaderboard(db, user_id)
+    lb_time = lb.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ") if lb and lb.updated_at else now_utc_str
+
     if lb.level > 1:
         nid = f"level_{lb.level}"
         notifications.append({
@@ -3008,7 +3331,7 @@ def get_user_notifications(
             "target": "/achievements",
             "targetText": "View Badges",
             "isRead": (user_id, nid) in READ_NOTIFICATIONS,
-            "createdAt": datetime.datetime.utcnow().isoformat()
+            "createdAt": lb_time
         })
 
     if lb.win_streak > 0:
@@ -3021,18 +3344,19 @@ def get_user_notifications(
             "target": "/battle/lobby",
             "targetText": "Battle Arena",
             "isRead": (user_id, nid) in READ_NOTIFICATIONS,
-            "createdAt": datetime.datetime.utcnow().isoformat()
+            "createdAt": lb_time
         })
 
-    # 3. Latest Quiz Attempt
+    # 4. Latest Quiz Attempt
     latest_attempt = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id
     ).order_by(QuizAttempt.completed_at.desc()).first()
-    if latest_attempt:
+    if latest_attempt and latest_attempt.completed_at:
         nid = f"attempt_{latest_attempt.id}"
         quiz = db.query(Quiz).filter(Quiz.id == latest_attempt.quiz_id).first()
         q_title = quiz.title if quiz else "AI Quiz"
         score_val = latest_attempt.score or 0
+        att_time = latest_attempt.completed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         notifications.append({
             "id": nid,
             "type": "quiz",
@@ -3041,11 +3365,12 @@ def get_user_notifications(
             "target": "/quizzes/history",
             "targetText": "View Analytics",
             "isRead": (user_id, nid) in READ_NOTIFICATIONS,
-            "createdAt": latest_attempt.completed_at.isoformat() if latest_attempt.completed_at else datetime.datetime.utcnow().isoformat()
+            "createdAt": att_time
         })
 
-    # 4. System / AI Welcome Notification
+    # 5. System / AI Welcome Notification
     sys_nid = f"sys_welcome_{user_id}"
+    user_created = user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if user and user.created_at else "2026-01-01T00:00:00Z"
     notifications.append({
         "id": sys_nid,
         "type": "system",
@@ -3054,8 +3379,18 @@ def get_user_notifications(
         "target": "/quizzes/ai-generate",
         "targetText": "Create Quiz",
         "isRead": (user_id, sys_nid) in READ_NOTIFICATIONS,
-        "createdAt": (user.created_at.isoformat() if user and user.created_at else datetime.datetime.utcnow().isoformat())
+        "createdAt": user_created
     })
+
+    # 6. Strictly Sort Descending by Timestamp (NEWEST AT THE VERY TOP)
+    def parse_notif_time(n):
+        ts = n.get("createdAt") or ""
+        try:
+            return datetime.datetime.fromisoformat(ts.replace("Z", ""))
+        except Exception:
+            return datetime.datetime.min
+
+    notifications.sort(key=parse_notif_time, reverse=True)
 
     unread_count = sum(1 for n in notifications if not n["isRead"])
     return {
@@ -3162,3 +3497,8 @@ def change_password(data: dict, db: Session = Depends(get_db)):
     """Change password - v1 API for frontend compatibility"""
     # Note: In production, update actual password
     return {"message": "Password changed successfully"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

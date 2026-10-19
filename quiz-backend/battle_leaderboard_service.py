@@ -1,10 +1,11 @@
+import os
 import math
 import uuid
 import random
 import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from models import User, Quiz, Question, QuizAttempt, Battle, BattleParticipant, Leaderboard
 
 # ─── System Standard Badges Catalog ──────────────────────────────────────────
@@ -85,8 +86,29 @@ BADGES_CATALOG = [
 
 
 def calculate_level(total_points: int) -> int:
-    """Calculates user level dynamically based on earned XP points (1000 XP per level)."""
-    return max(1, (total_points // 1000) + 1)
+    """
+    Calculates user level dynamically using a progressive XP scaling curve.
+    Levels start smoothly and progressively require more XP as rank rises.
+    Prevents unrealistic giant level jumps.
+    """
+    if total_points <= 0:
+        return 1
+
+    # Progressive XP thresholds:
+    # L1: 0, L2: 500, L3: 1200, L4: 2200, L5: 3500, L6: 5200, L7: 7200,
+    # L8: 9600, L9: 12500, L10: 16000, L11: 20000, L12: 25000, L13: 31000...
+    thresholds = [
+        0, 500, 1200, 2200, 3500, 5200, 7200, 9600, 12500, 16000,
+        20000, 25000, 31000, 38000, 46000, 55000, 65000, 76000, 88000, 101000
+    ]
+
+    for lvl, th in enumerate(thresholds, start=1):
+        if total_points < th:
+            return max(1, lvl - 1)
+
+    extra_points = total_points - thresholds[-1]
+    extra_levels = extra_points // 15000
+    return min(100, 20 + extra_levels)
 
 
 def get_or_create_leaderboard(db: Session, user_id: int) -> Leaderboard:
@@ -136,9 +158,8 @@ def update_leaderboard_from_quiz_result(
     """
     leaderboard = get_or_create_leaderboard(db, user_id)
 
-    # 1. Calculate points/XP
-    # 50 points per correct answer + 20 points completion bonus
-    earned_points = (score * 50) + 20
+    # 1. Calculate points/XP in a balanced, realistic range (30 - 150 XP per quiz)
+    earned_points = min(150, max(25, int(score * 1.2) + 25))
     leaderboard.total_points += earned_points
     leaderboard.quizzes_completed += 1
     leaderboard.level = calculate_level(leaderboard.total_points)
@@ -191,21 +212,24 @@ def update_leaderboard_from_battle_result(
     """
     participants = db.query(BattleParticipant).filter(BattleParticipant.battle_id == battle.id).all()
     winner_id = battle.winner_id
+    is_draw = (winner_id is None and len(participants) > 1)
 
     for p in participants:
         lb = get_or_create_leaderboard(db, p.user_id)
         lb.battles_played += 1
 
-        is_winner = (p.user_id == winner_id)
-        if is_winner:
+        if is_draw:
+            # Draw / Tie condition: Both receive equal draw points and preserve win streak
+            lb.total_points += 60 + (p.score * 5)
+        elif p.user_id == winner_id:
             lb.battles_won += 1
             lb.win_streak += 1
-            # Winner bonus: 250 XP + battle score points
-            lb.total_points += 250 + (p.score * 20)
+            # Winner bonus: 100 XP + battle score points
+            lb.total_points += 100 + (p.score * 8)
         else:
             lb.win_streak = 0
-            # Participation bonus: 60 XP + battle score points
-            lb.total_points += 60 + (p.score * 10)
+            # Participation bonus: 35 XP + battle score points
+            lb.total_points += 35 + (p.score * 4)
 
         lb.level = calculate_level(lb.total_points)
 
@@ -249,8 +273,31 @@ def generate_battle_id() -> str:
     return f"BTL-{code}"
 
 
-# ─── Active Invitations Registry ──────────────────────────────────────────────
-ACTIVE_INVITATIONS = []
+# ─── Active Invitations Registry with Disk Persistence ─────────────────────────
+import json
+
+INVITATIONS_FILE = os.path.join(os.path.dirname(__file__), "active_invitations.json")
+
+
+def load_persisted_invitations() -> List[Dict[str, Any]]:
+    if os.path.exists(INVITATIONS_FILE):
+        try:
+            with open(INVITATIONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def save_persisted_invitations(invitations: List[Dict[str, Any]]):
+    try:
+        with open(INVITATIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(invitations, f, indent=2)
+    except Exception as e:
+        print(f"Failed to persist invitations: {e}")
+
+
+ACTIVE_INVITATIONS = load_persisted_invitations()
 
 
 def load_battle_questions(
@@ -263,7 +310,10 @@ def load_battle_questions(
     Guarantees at least 10 questions conditioned on subject and difficulty.
     """
     import csv
-    csv_path = "/Users/user/Desktop/RUSL_reserch/QuizMasterAI/quiz_dataset_3000.csv"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    csv_path = os.path.join(base_dir, "quiz_dataset_3000.csv")
+    if not os.path.exists(csv_path):
+        csv_path = "/Users/user/Desktop/RUSL_reserch/QuizMasterAI/quiz_dataset_3000.csv"
     count = max(10, count)
 
     try:
@@ -304,10 +354,110 @@ def load_battle_questions(
                 "type": "mcq",
                 "options": ["Standard Definition", "Alternative Variant", "Theoretical Framework", "Practical Application"],
                 "correctAnswer": "Standard Definition",
-                "correctOption": "A"
+                "correctOption": "A",
+                "explanation": f"Core foundation of {subject} concepts."
             }
             for i in range(1, count + 1)
         ]
+
+
+def load_battle_questions_from_pdf(
+    db: Session,
+    pdf_id: int,
+    count: int = 10,
+    difficulty: str = "medium"
+) -> List[Dict[str, Any]]:
+    """
+    RAG Battle Integration: Extracts content chunks from the selected uploaded PDF
+    and synthesizes high-quality MCQ battle questions for both players.
+    """
+    count = max(10, count)
+    from models import PDF, PDFChunk
+
+    pdf = db.query(PDF).filter(PDF.id == pdf_id).first()
+    if not pdf:
+        return load_battle_questions("General", difficulty, count)
+
+    chunks_db = db.query(PDFChunk).filter(PDFChunk.pdf_id == pdf_id).order_by(PDFChunk.chunk_index.asc()).all()
+    chunk_texts = [
+        (getattr(c, "content", None) or getattr(c, "chunk_text", "") or "").strip()
+        for c in chunks_db
+    ]
+    chunk_texts = [t for t in chunk_texts if len(t) > 20]
+
+    pdf_name = getattr(pdf, "original_name", None) or getattr(pdf, "name", "Lecture Document")
+
+    if not chunk_texts:
+        return load_battle_questions(pdf_name, difficulty, count)
+
+    try:
+        from mcq_generator import MCQGenerator, MCQGenerationRequest, DifficultyLevel
+        gen = MCQGenerator()
+        diff_enum = DifficultyLevel.MEDIUM
+        if difficulty.lower() == "easy":
+            diff_enum = DifficultyLevel.EASY
+        elif difficulty.lower() == "hard":
+            diff_enum = DifficultyLevel.HARD
+
+        req = MCQGenerationRequest(
+            content_chunks=chunk_texts,
+            num_questions=min(count, 20),
+            difficulty=diff_enum,
+            topic=pdf_name
+        )
+        res = gen.generate_mcqs_from_chunks(req)
+        formatted = []
+        for idx, q in enumerate(res.questions, 1):
+            q_text = getattr(q, "question_text", None) or getattr(q, "question", "")
+            raw_opts = getattr(q, "options", [])
+            opt_strings = []
+            correct_opt = "A"
+            for o_idx, opt in enumerate(raw_opts):
+                opt_str = opt.option_text if hasattr(opt, "option_text") else str(opt)
+                opt_strings.append(opt_str)
+                if hasattr(opt, "is_correct") and opt.is_correct:
+                    correct_opt = chr(65 + o_idx)
+
+            formatted.append({
+                "_id": f"q_pdf_{idx}",
+                "question": q_text,
+                "type": "mcq",
+                "options": opt_strings,
+                "correctAnswer": getattr(q, "correct_answer", ""),
+                "correctOption": correct_opt,
+                "explanation": getattr(q, "explanation", "") or f"Extracted from PDF: {pdf_name}"
+            })
+        if len(formatted) >= count:
+            return formatted[:count]
+        extra = load_battle_questions(pdf_name, difficulty, count - len(formatted))
+        return formatted + extra
+    except Exception as e:
+        print(f"MCQ Generator on PDF: {e}, using direct chunk synthesis")
+        formatted = []
+        for idx, text in enumerate(chunk_texts[:count], 1):
+            sentences = [s.strip() for s in text.replace("\n", " ").split(".") if len(s.strip()) > 25]
+            lead_sentence = sentences[0] if sentences else text[:80]
+            words = [w for w in lead_sentence.split() if len(w) > 3]
+            key_term = words[min(2, len(words)-1)] if words else "Concept"
+            
+            formatted.append({
+                "_id": f"q_pdf_{idx}",
+                "question": f"Based on '{pdf_name}': \"{lead_sentence[:100]}...\" — Which of the following is correct?",
+                "type": "mcq",
+                "options": [
+                    f"Directly verifies {key_term} principles",
+                    f"Contradicts standard {key_term} theory",
+                    f"Exclusively applies to external systems",
+                    f"Irrelevant to {key_term} architecture"
+                ],
+                "correctAnswer": f"Directly verifies {key_term} principles",
+                "correctOption": "A",
+                "explanation": f"Quoted from document '{pdf_name}': {lead_sentence[:120]}"
+            })
+        if len(formatted) < count:
+            extra = load_battle_questions("General", difficulty, count - len(formatted))
+            formatted.extend(extra)
+        return formatted[:count]
 
 
 def create_battle(
@@ -317,21 +467,25 @@ def create_battle(
     subject: str = "General",
     difficulty: str = "medium",
     quiz_id: Optional[int] = None,
+    pdf_id: Optional[int] = None,
     max_players: int = 4,
     total_questions: int = 10
 ) -> Battle:
     """
     Creates a new Battle session entity identified by a unique Battle_ID.
+    - If pdf_id is specified: loads questions synthesized from the uploaded PDF document (RAG).
+    - Otherwise loads from benchmark dataset.
     - Minimum 10 questions.
-    - Base time: 15s per question.
-    - For each question added beyond 10, adds 3s: time_per_question = 15 + (count - 10) * 3
-    - Pre-loads authentic questions from dataset.
+    - Base time: 15s per question (+3s for each question beyond 10).
     """
     battle_code = generate_battle_id()
     count = max(10, total_questions)
     time_per_question = 15 + max(0, (count - 10) * 3)
 
-    questions = load_battle_questions(subject, difficulty, count)
+    if pdf_id:
+        questions = load_battle_questions_from_pdf(db, pdf_id, count, difficulty)
+    else:
+        questions = load_battle_questions(subject, difficulty, count)
 
     new_battle = Battle(
         battle_id=battle_code,
@@ -374,7 +528,29 @@ def send_battle_invitation(
 ) -> Dict[str, Any]:
     """
     Registers an invitation sent to a friend so they receive a notification/message.
+    Strictly validates that the recipient is an existing registered user and not the sender.
     """
+    cleaned = (friend_identifier or "").strip().lower()
+    if not cleaned:
+        return {"success": False, "message": "Please enter or select a valid username"}
+
+    # Find recipient user by username or email
+    target_user = db.query(User).filter(
+        (func.lower(User.username) == cleaned) | (func.lower(User.email) == cleaned)
+    ).first()
+
+    if not target_user:
+        return {
+            "success": False,
+            "message": f"User '{friend_identifier}' was not found. Please choose a valid registered user."
+        }
+
+    if target_user.id == host_user_id:
+        return {
+            "success": False,
+            "message": "You cannot send a battle challenge invitation to yourself."
+        }
+
     host_user = db.query(User).filter(User.id == host_user_id).first()
     host_name = host_user.username if host_user else "QuizMaster Player"
 
@@ -383,14 +559,16 @@ def send_battle_invitation(
         "battle_id": battle_id_code,
         "from_user_id": host_user_id,
         "from_username": host_name,
-        "to_username": friend_identifier.strip(),
-        "created_at": datetime.datetime.utcnow().isoformat(),
+        "to_user_id": target_user.id,
+        "to_username": target_user.username,
+        "created_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "status": "pending"
     }
     ACTIVE_INVITATIONS.append(invitation)
+    save_persisted_invitations(ACTIVE_INVITATIONS)
     return {
         "success": True,
-        "message": f"Invitation successfully sent to {friend_identifier}",
+        "message": f"Invitation successfully sent to @{target_user.username}",
         "invitation": invitation
     }
 
@@ -417,10 +595,10 @@ def join_battle(
     ).first()
 
     if not battle:
-        return {"success": False, "message": "Battle session not found"}
+        return {"success": False, "message": "Battle session not found", "error_type": "not_found"}
 
     if battle.status != "waiting":
-        return {"success": False, "message": f"Cannot join battle. Current status is '{battle.status}'"}
+        return {"success": False, "message": f"Cannot join battle. Current status is '{battle.status}'", "error_type": "not_waiting"}
 
     # Check if already joined
     existing = db.query(BattleParticipant).filter(
@@ -429,11 +607,11 @@ def join_battle(
     ).first()
 
     if existing:
-        return {"success": True, "message": "Already in this battle session", "battle": battle}
+        return {"success": True, "message": "Already in this battle session", "battle": battle, "already_joined": True}
 
     current_count = db.query(BattleParticipant).filter(BattleParticipant.battle_id == battle.id).count()
     if current_count >= battle.max_players:
-        return {"success": False, "message": "Battle session is full"}
+        return {"success": False, "message": "Battle session is full", "error_type": "full"}
 
     # Join session
     participant = BattleParticipant(
@@ -455,6 +633,60 @@ def join_battle(
     }
 
 
+# ─── Live Emotes Registry ───────────────────────────────────────────────────
+BATTLE_EMOTES: Dict[str, Dict[str, Any]] = {}
+
+
+def send_battle_emote(
+    battle_id: str,
+    user_id: int,
+    username: str,
+    emote: str
+) -> Dict[str, Any]:
+    """
+    Registers a live visual reaction/emote for real-time multiplayer feedback.
+    """
+    import time
+    BATTLE_EMOTES[battle_id] = {
+        "userId": user_id,
+        "userName": username,
+        "emote": emote,
+        "timestamp": time.time()
+    }
+    return {"success": True, "emote": emote, "battle_id": battle_id}
+
+
+def build_detailed_review(db: Session, battle: Battle, participants: List[BattleParticipant]) -> List[Dict[str, Any]]:
+    """Generates an academic question-by-question comparative breakdown for post-match review."""
+    questions = battle.questions_data or []
+    p_map = {p.user_id: (p.answers or {}) for p in participants}
+    p_names = {}
+    for p in participants:
+        u = db.query(User).filter(User.id == p.user_id).first()
+        p_names[p.user_id] = u.username if u else f"User {p.user_id}"
+
+    detailed_review = []
+    for idx, q in enumerate(questions):
+        correct_ans = q.get("correctAnswer") or q.get("correctOption")
+        item = {
+            "index": idx + 1,
+            "question": q.get("question", f"Question {idx+1}"),
+            "options": q.get("options", []),
+            "correctAnswer": correct_ans,
+            "explanation": q.get("explanation") or "Standard curriculum concept.",
+            "playerAnswers": {
+                str(u_id): {
+                    "userName": p_names.get(u_id, "Player"),
+                    "answer": p_answers.get(str(idx)),
+                    "isCorrect": str(p_answers.get(str(idx))).strip().lower() == str(correct_ans).strip().lower()
+                }
+                for u_id, p_answers in p_map.items()
+            }
+        }
+        detailed_review.append(item)
+    return detailed_review
+
+
 def complete_battle(
     db: Session,
     battle_id: int
@@ -462,23 +694,58 @@ def complete_battle(
     """
     Concludes the Battle session, computes scores, sets Winner_ID,
     and updates the consolidated Leaderboard entity.
+    Guarantees idempotency (prevents race condition / duplicate reward increments).
+    Includes detailed question-by-question head-to-head review.
     """
     battle = db.query(Battle).filter(Battle.id == battle_id).first()
     if not battle:
         return {"success": False, "message": "Battle not found"}
 
     participants = db.query(BattleParticipant).filter(BattleParticipant.battle_id == battle.id).all()
+    review = build_detailed_review(db, battle, participants)
+
+    # Idempotent guard: if already completed, return existing results safely
+    if battle.status == "completed":
+        winner_user = db.query(User).filter(User.id == battle.winner_id).first() if battle.winner_id else None
+        winner_name = winner_user.username if winner_user else ("Draw" if battle.winner_id is None else "Unknown")
+        return {
+            "success": True,
+            "message": f"Battle concluded. Winner is {winner_name}",
+            "battle_id": battle.battle_id,
+            "winner_id": battle.winner_id,
+            "winner_name": winner_name,
+            "is_draw": battle.winner_id is None and len(participants) > 1,
+            "participants_count": len(participants),
+            "detailed_review": review,
+            "scores": [
+                {
+                    "user_id": p.user_id,
+                    "score": p.score,
+                    "is_winner": (p.user_id == battle.winner_id and battle.winner_id is not None)
+                }
+                for p in sorted(participants, key=lambda p: p.score, reverse=True)
+            ]
+        }
+
     if not participants:
         battle.status = "completed"
         battle.completed_at = datetime.datetime.utcnow()
         db.commit()
-        return {"success": True, "battle": battle, "winner_id": None}
+        return {"success": True, "battle": battle, "winner_id": None, "detailed_review": []}
 
-    # Determine highest scoring participant as the Winner
+    # Determine highest scoring participant as the Winner or detect a Draw
     sorted_participants = sorted(participants, key=lambda p: p.score, reverse=True)
-    winner_participant = sorted_participants[0]
+    is_draw = len(sorted_participants) > 1 and (sorted_participants[0].score == sorted_participants[1].score)
 
-    battle.winner_id = winner_participant.user_id
+    if is_draw:
+        battle.winner_id = None
+        winner_name = "Draw"
+    else:
+        winner_participant = sorted_participants[0]
+        battle.winner_id = winner_participant.user_id
+        winner_user = db.query(User).filter(User.id == battle.winner_id).first()
+        winner_name = winner_user.username if winner_user else "Unknown"
+
     battle.status = "completed"
     battle.completed_at = datetime.datetime.utcnow()
     db.commit()
@@ -487,25 +754,262 @@ def complete_battle(
     # Trigger Results -> Leaderboard Update
     update_leaderboard_from_battle_result(db, battle)
 
-    # Format winner details
-    winner_user = db.query(User).filter(User.id == battle.winner_id).first()
-    winner_name = winner_user.username if winner_user else "Unknown"
-
     return {
         "success": True,
         "message": f"Battle completed! Winner is {winner_name}",
         "battle_id": battle.battle_id,
         "winner_id": battle.winner_id,
         "winner_name": winner_name,
+        "is_draw": is_draw,
         "participants_count": len(participants),
+        "detailed_review": review,
         "scores": [
             {
                 "user_id": p.user_id,
                 "score": p.score,
-                "is_winner": (p.user_id == battle.winner_id)
+                "is_winner": (p.user_id == battle.winner_id and battle.winner_id is not None)
             }
             for p in sorted_participants
         ]
+    }
+
+
+def cancel_battle(
+    db: Session,
+    battle_code_or_id: str,
+    user_id: int
+) -> Dict[str, Any]:
+    """Cancels a waiting battle session if user leaves matchmaking queue."""
+    battle = db.query(Battle).filter(
+        (Battle.battle_id == battle_code_or_id) | (Battle.id == (int(battle_code_or_id) if battle_code_or_id.isdigit() else -1))
+    ).first()
+    if not battle:
+        return {"success": False, "message": "Battle not found"}
+
+    if battle.creator_id == user_id and battle.status == "waiting":
+        battle.status = "cancelled"
+        db.commit()
+        return {"success": True, "message": "Matchmaking search cancelled"}
+
+    return {"success": False, "message": "Battle cannot be cancelled"}
+
+
+def quick_match(
+    db: Session,
+    user_id: int,
+    subject: str = "General",
+    difficulty: str = "medium"
+) -> Dict[str, Any]:
+    """
+    Intelligent skill-based Matchmaking algorithm:
+    1. Searches active waiting battles created in the last 15 minutes.
+    2. Sorts candidates by closest player level (|my_level - host_level|), 
+       matching difficulty, and queue wait time.
+    3. Pairs with the best candidate and automatically transitions status to 'active'
+       so both players launch simultaneously into the arena.
+    4. If no opponent is currently queued, registers a new waiting queue room.
+    """
+    my_lb = get_or_create_leaderboard(db, user_id)
+    my_level = my_lb.level if my_lb else 1
+
+    fifteen_mins_ago = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+    waiting_battles = db.query(Battle).filter(
+        Battle.status == "waiting",
+        Battle.creator_id != user_id,
+        Battle.created_at >= fifteen_mins_ago
+    ).all()
+
+    valid_candidates = []
+    for b in waiting_battles:
+        p_count = db.query(BattleParticipant).filter(BattleParticipant.battle_id == b.id).count()
+        if p_count >= b.max_players:
+            continue
+
+        host_lb = db.query(Leaderboard).filter(Leaderboard.user_id == b.creator_id).first()
+        host_level = host_lb.level if host_lb else 1
+        level_diff = abs(my_level - host_level)
+
+        valid_candidates.append({
+            "battle": b,
+            "host_level": host_level,
+            "level_diff": level_diff,
+            "same_difficulty": 0 if b.difficulty == difficulty else 1,
+            "same_subject": 0 if b.subject == subject else 1,
+            "created_at": b.created_at
+        })
+
+    if valid_candidates:
+        # Sort: Closest level first, then difficulty match, then oldest queued
+        valid_candidates.sort(key=lambda x: (x["level_diff"], x["same_difficulty"], x["same_subject"], x["created_at"]))
+        best = valid_candidates[0]
+        b = best["battle"]
+        host_level = best["host_level"]
+
+        join_res = join_battle(db, b.battle_id, user_id)
+        if join_res.get("success"):
+            # Mark battle as active so both players auto-launch!
+            b.status = "active"
+            db.commit()
+            db.refresh(b)
+
+            host_user = db.query(User).filter(User.id == b.creator_id).first()
+            host_name = host_user.username if host_user else "Opponent"
+
+            return {
+                "success": True,
+                "matched": True,
+                "battle_id": b.battle_id,
+                "id": b.id,
+                "subject": b.subject,
+                "difficulty": b.difficulty,
+                "total_questions": b.total_rounds or 10,
+                "time_per_question": b.time_per_question or 15,
+                "questions": b.questions_data or [],
+                "opponent": {
+                    "user_id": b.creator_id,
+                    "username": host_name,
+                    "level": host_level
+                },
+                "message": f"Matched with {host_name} (Level {host_level})!"
+            }
+
+    # Reuse existing fresh waiting room if user was already searching in the last 2 minutes
+    two_mins_ago = datetime.datetime.utcnow() - datetime.timedelta(minutes=2)
+    existing_room = db.query(Battle).filter(
+        Battle.status == "waiting",
+        Battle.creator_id == user_id,
+        Battle.created_at >= two_mins_ago
+    ).order_by(Battle.created_at.desc()).first()
+
+    if existing_room:
+        return {
+            "success": True,
+            "matched": False,
+            "waiting": True,
+            "battle_id": existing_room.battle_id,
+            "id": existing_room.id,
+            "subject": existing_room.subject,
+            "difficulty": existing_room.difficulty,
+            "total_questions": existing_room.total_rounds or 10,
+            "time_per_question": existing_room.time_per_question or 15,
+            "questions": existing_room.questions_data or [],
+            "message": f"In matchmaking queue (Level {my_level}). Searching for opponent..."
+        }
+
+    # No match currently waiting -> create new matchmaking waiting room
+    new_b = create_battle(
+        db=db,
+        creator_id=user_id,
+        title=f"Quick Match Battle",
+        subject=subject,
+        difficulty=difficulty,
+        max_players=2,
+        total_questions=10
+    )
+    return {
+        "success": True,
+        "matched": False,
+        "waiting": True,
+        "battle_id": new_b.battle_id,
+        "id": new_b.id,
+        "subject": new_b.subject,
+        "difficulty": new_b.difficulty,
+        "total_questions": 10,
+        "time_per_question": new_b.time_per_question or 15,
+        "questions": new_b.questions_data or [],
+        "message": f"In matchmaking queue (Level {my_level}). Searching for opponent..."
+    }
+
+
+def get_battle_live_state(
+    db: Session,
+    battle_code_or_id: str,
+    user_id: int
+) -> Dict[str, Any]:
+    """
+    Ultra-low-latency real-time state payload for 800ms polling loop.
+    Returns myState, opponentState, answering status, and live emotes.
+    """
+    import time
+    battle = db.query(Battle).filter(
+        (Battle.battle_id == battle_code_or_id) | (Battle.id == (int(battle_code_or_id) if battle_code_or_id.isdigit() else -1))
+    ).first()
+    if not battle:
+        return {"success": False, "message": "Battle not found"}
+
+    participants = db.query(BattleParticipant).filter(BattleParticipant.battle_id == battle.id).all()
+    my_p = next((p for p in participants if p.user_id == user_id), None)
+    opp_p = next((p for p in participants if p.user_id != user_id), None)
+
+    opp_user = None
+    opp_lb = None
+    if opp_p:
+        opp_user = db.query(User).filter(User.id == opp_p.user_id).first()
+        opp_lb = db.query(Leaderboard).filter(Leaderboard.user_id == opp_p.user_id).first()
+
+    my_lb = db.query(Leaderboard).filter(Leaderboard.user_id == user_id).first()
+    my_user = db.query(User).filter(User.id == user_id).first()
+
+    # Emote check (last 4 seconds)
+    latest_emote = None
+    if battle.battle_id in BATTLE_EMOTES:
+        e = BATTLE_EMOTES[battle.battle_id]
+        if time.time() - e.get("timestamp", 0) < 4.0:
+            latest_emote = e
+
+    my_answers = my_p.answers or {} if my_p else {}
+    opp_answers = opp_p.answers or {} if opp_p else {}
+    total_q = battle.total_rounds or (len(battle.questions_data) if battle.questions_data else 10)
+
+    # Auto-conclude battle if all participants have finished
+    all_done = (
+        len(participants) >= 1 and all(
+            (p.completed_at is not None or len(p.answers or {}) >= total_q)
+            for p in participants
+        )
+    )
+    if all_done and battle.status != "completed":
+        complete_battle(db, battle.id)
+        db.refresh(battle)
+
+    winner_user = db.query(User).filter(User.id == battle.winner_id).first() if battle.winner_id else None
+    winner_name = winner_user.username if winner_user else ("Draw" if (battle.status == "completed" and battle.winner_id is None) else None)
+
+    my_finished = (my_p.completed_at is not None or len(my_answers) >= total_q) if my_p else False
+    opp_finished = (opp_p.completed_at is not None or len(opp_answers) >= total_q) if opp_p else False
+
+    return {
+        "success": True,
+        "battle_id": battle.battle_id,
+        "id": battle.id,
+        "status": battle.status,
+        "winner_id": battle.winner_id,
+        "winner_name": winner_name,
+        "total_questions": total_q,
+        "time_per_question": battle.time_per_question,
+        "participants_count": len(participants),
+        "latest_emote": latest_emote,
+        "my_state": {
+            "userId": user_id,
+            "userName": my_user.username if my_user else "You",
+            "level": my_lb.level if my_lb else 1,
+            "score": my_p.score if my_p else 0,
+            "answersCount": len(my_answers),
+            "answeredIndices": [str(k) for k in my_answers.keys()],
+            "isReady": my_p.is_ready if my_p else False,
+            "isFinished": my_finished
+        },
+        "opponent_state": {
+            "userId": opp_p.user_id if opp_p else None,
+            "userName": opp_user.username if opp_user else "Waiting for opponent...",
+            "level": opp_lb.level if opp_lb else 1,
+            "score": opp_p.score if opp_p else 0,
+            "answersCount": len(opp_answers),
+            "answeredIndices": [str(k) for k in opp_answers.keys()],
+            "isReady": opp_p.is_ready if opp_p else False,
+            "hasJoined": opp_p is not None,
+            "isFinished": opp_finished
+        }
     }
 
 
