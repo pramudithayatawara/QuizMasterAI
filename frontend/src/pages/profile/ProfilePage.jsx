@@ -511,27 +511,67 @@ const ProfilePage = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-16">
-      {/* ─── Hero Header & Banner ─────────────────────────────────────────────────── */}
+      {/* ─── Hero Header & Banner (Sleek Cyber Arena, No Heavy Purple) ─────────── */}
       <motion.div
         initial={{ opacity: 0, y: -15 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative rounded-3xl overflow-hidden shadow-2xl border border-indigo-500/20 bg-gradient-to-b from-slate-900/90 to-slate-950"
+        className="relative rounded-3xl overflow-hidden shadow-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900 to-slate-950"
       >
-        {/* Glowing Decorative Cover Banner */}
-        <div className="h-56 relative overflow-hidden bg-gradient-to-r from-indigo-950 via-purple-950 to-slate-950">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-500/20 via-purple-500/10 to-transparent" />
-          <div className="absolute inset-0 bg-grid-pattern opacity-15" />
-          
-          <div className="absolute -top-12 -left-12 w-64 h-64 bg-indigo-600/30 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute top-10 right-10 w-72 h-72 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
+        {/* Sleek Dark Tech Cover Banner */}
+        <div className="h-44 md:h-48 relative overflow-hidden bg-[#0a0f1d] border-b border-white/10">
+          {/* Cyber Isometric Grid Background Texture */}
+          <div 
+            className="absolute inset-0 opacity-20 pointer-events-none"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, rgba(6, 182, 212, 0.15) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(6, 182, 212, 0.15) 1px, transparent 1px)
+              `,
+              backgroundSize: '28px 28px'
+            }}
+          />
 
-          {/* Top Quick Actions */}
+          {/* Deep Carbon Radial Shadows & Lighting */}
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-950/40 via-slate-900/80 to-slate-950/90" />
+          <div className="absolute -top-16 -left-16 w-80 h-80 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -top-10 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 right-10 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Abstract Cyber Constellation / Circuit SVG */}
+          <div className="absolute inset-0 flex items-center justify-end pr-10 pointer-events-none opacity-25">
+            <svg width="460" height="190" viewBox="0 0 460 190" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M40 95 L140 95 L180 50 L260 50 L300 95 L420 95" stroke="url(#tech_line)" strokeWidth="1.5" strokeDasharray="4 4" />
+              <path d="M90 140 L160 140 L210 95 L320 95 L360 140 L440 140" stroke="rgba(6, 182, 212, 0.4)" strokeWidth="1.2" />
+              <circle cx="180" cy="50" r="5" fill="#06B6D4" />
+              <circle cx="260" cy="50" r="4" fill="#3B82F6" />
+              <circle cx="210" cy="95" r="5" fill="#F59E0B" />
+              <circle cx="300" cy="95" r="6" stroke="#06B6D4" strokeWidth="2" fill="#0A0F1D" />
+              <circle cx="360" cy="140" r="4" fill="#06B6D4" />
+              <defs>
+                <linearGradient id="tech_line" x1="40" y1="95" x2="420" y2="95" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#06B6D4" />
+                  <stop offset="0.5" stopColor="#3B82F6" />
+                  <stop offset="1" stopColor="#F59E0B" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+
+          {/* Season / Scholar Badge Pill at Top Left */}
+          <div className="absolute top-4 left-6 md:left-8 flex items-center gap-2 z-10">
+            <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 backdrop-blur-md flex items-center gap-1.5 shadow-sm">
+              <Sparkles size={12} className="text-cyan-400" />
+              AI Scholar Arena • Season 1
+            </span>
+          </div>
+
+          {/* Top Quick Actions at Top Right */}
           <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
             <button
               onClick={handleOpenAvatarModal}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/20 transition-all shadow-md active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-900/80 hover:bg-slate-800 text-white backdrop-blur-md border border-white/20 transition-all shadow-md active:scale-95"
             >
-              <Camera size={14} className="text-indigo-300" />
+              <Camera size={14} className="text-cyan-300" />
               <span>Change Photo</span>
             </button>
             <button
@@ -539,7 +579,7 @@ const ProfilePage = () => {
                 setActiveTab('profile');
                 setIsEditing(true);
               }}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-indigo-600/80 hover:bg-indigo-600 text-white backdrop-blur-md border border-indigo-400/30 transition-all shadow-md active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white backdrop-blur-md border border-cyan-400/30 transition-all shadow-md active:scale-95"
             >
               <Edit2 size={14} />
               <span>Edit Profile</span>
@@ -549,10 +589,10 @@ const ProfilePage = () => {
 
         {/* Profile Identity Bar */}
         <div className="px-6 md:px-8 pb-6 pt-0 relative">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5 -mt-20">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5 -mt-16 sm:-mt-20">
             <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5">
               <div className="relative group cursor-pointer" onClick={handleOpenAvatarModal}>
-                <div className="relative w-32 h-32 md:w-36 md:h-36 rounded-full p-1.5 bg-gradient-to-tr from-amber-400 via-indigo-500 to-purple-600 shadow-2xl shadow-indigo-500/30 ring-4 ring-slate-950">
+                <div className="relative w-32 h-32 md:w-36 md:h-36 rounded-full p-1.5 bg-gradient-to-tr from-cyan-400 via-blue-500 to-amber-400 shadow-2xl shadow-cyan-500/25 ring-4 ring-slate-950">
                   <Avatar
                     name={fullName}
                     src={avatarSrc}
@@ -560,7 +600,7 @@ const ProfilePage = () => {
                     className="w-full h-full rounded-full object-cover border-2 border-slate-900 bg-slate-800"
                   />
                   <div className="absolute inset-1.5 rounded-full bg-black/60 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs">
-                    <Camera size={26} className="text-amber-400 mb-1" />
+                    <Camera size={26} className="text-cyan-400 mb-1" />
                     <span className="text-[11px] font-bold tracking-wide">Change</span>
                   </div>
                 </div>
@@ -580,8 +620,8 @@ const ProfilePage = () => {
                     <Star size={11} className="fill-amber-400 text-amber-400" />
                     Level {currentLevel} Scholar
                   </span>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 shadow-sm">
-                    <Award size={11} className="text-indigo-300" />
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 shadow-sm">
+                    <Award size={11} className="text-cyan-300" />
                     Rank #{currentRank}
                   </span>
                   {winStreak > 0 && (
@@ -593,7 +633,7 @@ const ProfilePage = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs text-slate-400 font-medium">
-                  <span className="text-indigo-400 font-semibold">@{profileData?.username || user?.username}</span>
+                  <span className="text-cyan-400 font-semibold">@{profileData?.username || user?.username}</span>
                   <span>•</span>
                   <span className="flex items-center gap-1">
                     <Mail size={12} />
@@ -614,12 +654,12 @@ const ProfilePage = () => {
               </div>
             </div>
 
-            <div className="hidden lg:flex flex-col items-end justify-center bg-slate-900/60 border border-white/10 rounded-2xl px-5 py-3 backdrop-blur-md">
+            <div className="hidden lg:flex flex-col items-end justify-center bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-3 backdrop-blur-md">
               <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Total Knowledge Points</span>
-              <span className="text-3xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">
+              <span className="text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-300 to-amber-300 bg-clip-text text-transparent">
                 {totalXP.toLocaleString()} XP
               </span>
-              <span className="text-xs text-indigo-400 font-semibold mt-0.5">
+              <span className="text-xs text-cyan-400 font-semibold mt-0.5">
                 {levelInfo.xpNeeded.toLocaleString()} XP to Level {currentLevel + 1}
               </span>
             </div>
