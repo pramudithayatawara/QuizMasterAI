@@ -5,7 +5,7 @@ import {
   Brain, Bell, Menu, LogOut, User, Settings,
   Swords, ChevronDown, TrendingUp, Sparkles,
   CheckCheck, Trophy, Flame, Play, Clock,
-  ExternalLink
+  ExternalLink, X
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store.js';
 import { useUIStore } from '../../store/ui.store.js';
@@ -110,6 +110,17 @@ const Navbar = () => {
       await notificationAPI.clearAll().catch(() => {});
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       setUnreadCount(0);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDismissNotification = async (e, notifId) => {
+    e.stopPropagation();
+    try {
+      await notificationAPI.markAsRead(notifId).catch(() => {});
+      setNotifications(prev => prev.filter(n => n.id !== notifId));
+      setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (err) {
       console.error(err);
     }
@@ -290,9 +301,20 @@ const Navbar = () => {
                         )}
                       </div>
 
-                      {!notif.isRead && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-primary-400 self-center flex-shrink-0" />
-                      )}
+                      <div className="flex items-center gap-1.5 self-center flex-shrink-0">
+                        {!notif.isRead && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-primary-400" />
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDismissNotification(e, notif.id)}
+                          className="p-1 rounded-lg text-dark-400 hover:text-red-400 hover:bg-dark-700/60 transition-colors cursor-pointer"
+                          title="Dismiss notification"
+                          aria-label="Dismiss notification"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
