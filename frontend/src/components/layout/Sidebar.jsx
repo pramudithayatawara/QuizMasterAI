@@ -3,9 +3,10 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Brain, Swords,
-  Trophy, User, ChevronRight, X, Sparkles,
+  Trophy, User, ChevronRight, X, Sparkles, Shield
 } from 'lucide-react';
 import { useUIStore } from '../../store/ui.store.js';
+import { useAuthStore } from '../../store/auth.store.js';
 import { useTheme } from '../../hooks/useTheme.js';
 import { ROUTES } from '../../constants/routes.js';
 import { cn } from '../../utils/helpers.js';
@@ -118,8 +119,25 @@ const NavItem = ({ item, isCollapsed, isDark }) => {
 
 const Sidebar = () => {
   const { isSidebarOpen, setSidebar } = useUIStore();
+  const { user } = useAuthStore();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+
+  const isAdmin = user?.role === 'admin' || user?.id === 1 || user?.username === 'admin' || user?.email === 'admin@quizmaster.ai';
+
+  const navItems = React.useMemo(() => {
+    if (!isAdmin) return NAV_ITEMS;
+    return [
+      ...NAV_ITEMS,
+      {
+        label: 'Admin Panel',
+        icon: Shield,
+        path: ROUTES.ADMIN,
+        badge: 'ADMIN',
+        badgeColor: 'bg-emerald-500',
+      },
+    ];
+  }, [isAdmin]);
 
   return (
     <>
@@ -163,7 +181,7 @@ const Sidebar = () => {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto no-scrollbar">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavItem
               key={item.path}
               item={item}

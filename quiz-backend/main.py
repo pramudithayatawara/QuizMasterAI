@@ -75,8 +75,18 @@ except ImportError:
     QUIZ_STORAGE_AVAILABLE = False
     print("⚠️ Quiz storage and difficulty categorization not available. Install with required dependencies.")
 
-from database import engine, Base, get_db
+from database import engine, Base, get_db, SessionLocal
 from models import User, Quiz, Question, QuizAttempt, PDF, PDFChunk, Battle, BattleParticipant, Leaderboard
+from security import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    decode_access_token,
+    get_authenticated_user_id,
+    get_current_user_account,
+    get_current_admin_user,
+    ensure_admin_user_exists,
+)
 from battle_leaderboard_service import (
     create_battle, join_battle, complete_battle,
     get_leaderboard_data, get_user_profile_data, get_user_badges_data,
@@ -115,6 +125,12 @@ async def lifespan(app: FastAPI):
     # Create all tables
     Base.metadata.create_all(bind=engine)
     print("✅ Database tables created successfully")
+    # Initialize default admin account if not present
+    try:
+        with SessionLocal() as db_session:
+            ensure_admin_user_exists(db_session)
+    except Exception as ex:
+        print(f"⚠️ Admin initialization notice: {ex}")
     # Create uploads directory
     os.makedirs("uploads", exist_ok=True)
     print("✅ Uploads directory created")
@@ -174,9 +190,8 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
-        # Add more specific origins as needed for development
-        # Note: Cannot use "*" when allow_credentials=True
     ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
@@ -300,8 +315,8 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/api/v1/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register_user(user: RegisterRequest, db: Session = Depends(get_db)):
-    """Register a new user - v1 API for frontend compatibility"""
-    print(f"📝 Registration request received: {user}")  # Debug logging
+    """Register a new user with secure salted bcrypt password hashing and signed JWT token"""
+    print(f"📝 Registration request received: {user.username} ({user.email})")
 
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == user.email).first()
@@ -319,18 +334,34 @@ def register_user(user: RegisterRequest, db: Session = Depends(get_db)):
             detail="Username already taken"
         )
 
-    # Create new user
+    # Validate password strength
+    if not user.password or len(user.password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long"
+        )
+
+    # Create new user with salted bcrypt password
+    hashed_password = get_password_hash(user.password)
     new_user = User(
         username=user.username,
         email=user.email,
-        hashed_password=user.password  # TODO: Use bcrypt or passlib for hashing
+        hashed_password=hashed_password,
+        role="student",
+        is_active=True
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     get_or_create_leaderboard(db, new_user.id)
 
-    access_token = f"token_{new_user.id}_{new_user.username}"
+    role_name = new_user.role or ("admin" if new_user.id == 1 else "student")
+    access_token = create_access_token({
+        "sub": str(new_user.id),
+        "username": new_user.username,
+        "email": new_user.email,
+        "role": role_name
+    })
     first_name = new_user.first_name or (new_user.username.split(" ")[0] if " " in new_user.username else new_user.username)
     last_name = new_user.last_name or (new_user.username.split(" ")[1] if " " in new_user.username else "")
 
@@ -348,7 +379,7 @@ def register_user(user: RegisterRequest, db: Session = Depends(get_db)):
             lastName=last_name,
             bio=new_user.bio,
             avatar=new_user.avatar,
-            role=new_user.role or ("admin" if new_user.id == 1 else "student"),
+            role=role_name,
             is_active=bool(new_user.is_active if new_user.is_active is not None else True),
             isActive=bool(new_user.is_active if new_user.is_active is not None else True)
         )
@@ -357,24 +388,49 @@ def register_user(user: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/v1/auth/login", response_model=TokenResponse)
 def login_user(credentials: LoginRequest, db: Session = Depends(get_db)):
-    """Login user - v1 API for frontend compatibility"""
-    # Find user by email
+    """Login user with bcrypt verification, active status check, and signed JWT token"""
+    # Find user by email or username
     user = db.query(User).filter(User.email == credentials.email).first()
+    if not user:
+        user = db.query(User).filter(User.username == credentials.email).first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
 
-    # Check password (Note: In production, use bcrypt to verify hashed password)
-    if user.hashed_password != credentials.password:
+    # Enforce active account status (suspension check)
+    is_active = bool(user.is_active if user.is_active is not None else True)
+    if not is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been suspended by an administrator. Please contact support."
+        )
+
+    # Check password with bcrypt and legacy fallback
+    if not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
 
-    # Generate simple token (Note: In production, use JWT)
-    access_token = f"token_{user.id}_{user.username}"
+    # Auto-upgrade legacy unhashed password to bcrypt in database
+    if not user.hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            user.hashed_password = get_password_hash(credentials.password)
+            db.commit()
+        except Exception as ex:
+            print(f"⚠️ Auto-upgrading password notice: {ex}")
+
+    # Generate signed JWT token
+    role_name = user.role or ("admin" if user.id == 1 else "student")
+    access_token = create_access_token({
+        "sub": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "role": role_name
+    })
     first_name = user.first_name or (user.username.split(" ")[0] if " " in user.username else user.username)
     last_name = user.last_name or (user.username.split(" ")[1] if " " in user.username else "")
 
@@ -392,7 +448,7 @@ def login_user(credentials: LoginRequest, db: Session = Depends(get_db)):
             lastName=last_name,
             bio=user.bio,
             avatar=user.avatar,
-            role=user.role or ("admin" if user.id == 1 else "student"),
+            role=role_name,
             is_active=bool(user.is_active if user.is_active is not None else True),
             isActive=bool(user.is_active if user.is_active is not None else True)
         )
@@ -401,15 +457,13 @@ def login_user(credentials: LoginRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/auth/me", response_model=UserResponse)
 def get_current_user(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    """Get current authenticated user - v1 API for frontend compatibility"""
+    """Get current authenticated user account"""
     user_id = get_authenticated_user_id(authorization, db)
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        user = db.query(User).first()
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthenticated user. Please log in."
         )
     first_name = user.first_name or (user.username.split(" ")[0] if " " in user.username else user.username)
     last_name = user.last_name or (user.username.split(" ")[1] if " " in user.username else "")
@@ -428,29 +482,6 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
         is_active=bool(user.is_active if user.is_active is not None else True),
         isActive=bool(user.is_active if user.is_active is not None else True)
     )
-
-
-def get_authenticated_user_id(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> int:
-    """Helper to extract user_id from Bearer token or fallback to active user."""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "").strip()
-        if token.startswith("token_"):
-            parts = token.split("_")
-            if len(parts) >= 2 and parts[1].isdigit():
-                return int(parts[1])
-            elif len(parts) >= 3 and parts[2].isdigit():
-                return int(parts[2])
-            elif len(parts) >= 2:
-                u = db.query(User).filter(User.username == parts[1]).first()
-                if u:
-                    return u.id
-        elif "token-" in token:
-            parts = token.split("-")
-            if parts[-1].isdigit():
-                return int(parts[-1])
-        elif token.isdigit():
-            return int(token)
-    return 0  # Unauthenticated — return 0 so no data leaks
 
 
 @app.post("/api/v1/auth/logout")
@@ -2025,8 +2056,11 @@ def change_user_password(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Change authenticated user password"""
+    """Change authenticated user password with secure bcrypt hashing"""
     user_id = get_authenticated_user_id(authorization, db)
+    if not user_id or user_id <= 0:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2037,13 +2071,13 @@ def change_user_password(
     if not current_pwd or not new_pwd:
         raise HTTPException(status_code=400, detail="Current and new password are required")
 
-    if user.hashed_password != current_pwd:
+    if not verify_password(current_pwd, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect current password")
 
     if len(new_pwd) < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters long")
 
-    user.hashed_password = new_pwd
+    user.hashed_password = get_password_hash(new_pwd)
     db.commit()
 
     return {
@@ -2755,8 +2789,11 @@ def get_active_battles(db: Session = Depends(get_db)):
 # ==================== Admin Endpoints (v1 compatibility) ====================
 
 @app.get("/api/v1/admin/dashboard")
-def get_admin_dashboard(db: Session = Depends(get_db)):
-    """Get admin dashboard with comprehensive system statistics"""
+def get_admin_dashboard(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Get admin dashboard with comprehensive system statistics (admin only)"""
     total_users = db.query(User).count()
     total_quizzes = db.query(Quiz).count()
     total_questions = db.query(Question).count()
@@ -2834,9 +2871,10 @@ def get_admin_users(
     limit: int = 20,
     search: Optional[str] = None,
     role: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
 ):
-    """Get all users with pagination, role, and search filter"""
+    """Get all users with pagination, role, and search filter (admin only)"""
     query = db.query(User)
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -2902,8 +2940,12 @@ def get_admin_users(
 
 
 @app.get("/api/v1/admin/users/{user_id}")
-def get_admin_user_by_id(user_id: int, db: Session = Depends(get_db)):
-    """Get user by ID (admin)"""
+def get_admin_user_by_id(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Get user by ID (admin only)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2925,10 +2967,14 @@ def get_admin_user_by_id(user_id: int, db: Session = Depends(get_db)):
 
 
 @app.delete("/api/v1/admin/users/{user_id}")
-def delete_admin_user(user_id: int, db: Session = Depends(get_db)):
-    """Delete a user account and clean related data"""
-    if user_id == 1:
-        raise HTTPException(status_code=400, detail="Cannot delete root system administrator account")
+def delete_admin_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Delete a user account and clean related data (admin only)"""
+    if user_id == 1 or user_id == admin_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete root administrator or self account")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2938,13 +2984,17 @@ def delete_admin_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/v1/admin/users/{user_id}/toggle-status")
-def toggle_user_status(user_id: int, db: Session = Depends(get_db)):
-    """Toggle user active / suspended status"""
+def toggle_user_status(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Toggle user active / suspended status (admin only)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if user.id == 1:
-        raise HTTPException(status_code=400, detail="Root admin account cannot be suspended")
+    if user.id == 1 or user.id == admin_user.id:
+        raise HTTPException(status_code=400, detail="Root administrator account cannot be suspended")
 
     current_status = bool(user.is_active if user.is_active is not None else True)
     user.is_active = not current_status
@@ -2958,8 +3008,13 @@ def toggle_user_status(user_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/v1/admin/users/{user_id}/role")
-def update_user_role(user_id: int, data: dict, db: Session = Depends(get_db)):
-    """Promote or change user role"""
+def update_user_role(
+    user_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Promote or change user role (admin only)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2974,9 +3029,10 @@ def get_admin_battles(
     page: int = 1,
     limit: int = 20,
     search: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
 ):
-    """Get all battles with host and winner information"""
+    """Get all battles with host and winner information (admin only)"""
     query = db.query(Battle)
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -3028,8 +3084,12 @@ def get_admin_battles(
 
 
 @app.delete("/api/v1/admin/battles/{battle_id}")
-def delete_admin_battle(battle_id: str, db: Session = Depends(get_db)):
-    """Terminate or delete a battle session"""
+def delete_admin_battle(
+    battle_id: str,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Terminate or delete a battle session (admin only)"""
     b = db.query(Battle).filter(
         (Battle.battle_id == battle_id) | (Battle.id == (int(battle_id) if battle_id.isdigit() else -1))
     ).first()
@@ -3045,9 +3105,10 @@ def get_admin_quizzes(
     page: int = 1,
     limit: int = 20,
     search: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
 ):
-    """Get all platform quizzes with questions count and creator info"""
+    """Get all platform quizzes with questions count and creator info (admin only)"""
     query = db.query(Quiz)
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -3091,8 +3152,12 @@ def get_admin_quizzes(
 
 
 @app.delete("/api/v1/admin/quizzes/{quiz_id}")
-def delete_admin_quiz(quiz_id: int, db: Session = Depends(get_db)):
-    """Delete a quiz and its questions"""
+def delete_admin_quiz(
+    quiz_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Delete a quiz and its questions (admin only)"""
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
@@ -3106,9 +3171,10 @@ def get_admin_pdfs(
     page: int = 1,
     limit: int = 20,
     search: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
 ):
-    """Get all PDFs uploaded across users"""
+    """Get all PDFs uploaded across users (admin only)"""
     query = db.query(PDF)
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -3154,8 +3220,12 @@ def get_admin_pdfs(
 
 
 @app.delete("/api/v1/admin/pdfs/{pdf_id}")
-def delete_admin_pdf(pdf_id: int, db: Session = Depends(get_db)):
-    """Delete PDF record"""
+def delete_admin_pdf(
+    pdf_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    """Delete PDF record (admin only)"""
     pdf = db.query(PDF).filter(PDF.id == pdf_id).first()
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
@@ -3562,11 +3632,7 @@ def reset_password(token: str, data: dict, db: Session = Depends(get_db)):
     return {"message": "Password reset successfully"}
 
 
-@app.post("/api/v1/auth/change-password")
-def change_password(data: dict, db: Session = Depends(get_db)):
-    """Change password - v1 API for frontend compatibility"""
-    # Note: In production, update actual password
-    return {"message": "Password changed successfully"}
+
 
 
 if __name__ == "__main__":
