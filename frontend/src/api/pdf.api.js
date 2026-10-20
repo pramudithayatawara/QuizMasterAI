@@ -68,4 +68,7 @@ export const pdfAPI = {
 
   deletePdf: (id) =>
     axiosInstance.delete(`/pdfs/${id}`),
+
+  getFileUrl: (id, download = false) =>
+    `/api/v1/pdfs/${id}/file${download ? '?download=true' : ''}`,
 };

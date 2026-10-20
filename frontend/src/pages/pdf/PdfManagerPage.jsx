@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Upload, Trash2, Eye, Clock, CheckCircle, 
-  AlertCircle, Loader2, Plus, Calendar, Layers, Brain
+  AlertCircle, Loader2, Plus, Calendar, Layers, Brain,
+  ExternalLink
 } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme.js';
 import { pdfAPI } from '../../api/pdf.api.js';
 import { quizAPI } from '../../api/quiz.api.js';
 import PdfUploadModal from '../../components/pdf/PdfUploadModal.jsx';
+import PdfViewModal from '../../components/pdf/PdfViewModal.jsx';
 import toast from 'react-hot-toast';
 
 /**
@@ -15,11 +18,13 @@ import toast from 'react-hot-toast';
  * @description PDF management page with upload, list, and delete functionality.
  */
 const PdfManagerPage = () => {
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [pdfs, setPdfs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [selectedPdfForView, setSelectedPdfForView] = useState(null);
   const [deletingPdfId, setDeletingPdfId] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -66,21 +71,8 @@ const PdfManagerPage = () => {
     fetchPdfs();
   };
 
-  const handleGenerateQuiz = async (pdfId) => {
-    try {
-      toast.loading('Generating quiz... This may take 10-15 seconds.');
-      const response = await quizAPI.generateQuiz({ pdfId, questionCount: 10 });
-      toast.dismiss();
-      toast.success('Quiz generated successfully!');
-
-      // Navigate to quiz page or show success
-      // For now, just refresh the PDF list
-      fetchPdfs();
-    } catch (error) {
-      console.error('Failed to generate quiz:', error);
-      toast.dismiss();
-      toast.error(error.response?.data?.detail || error.message || 'Failed to generate quiz');
-    }
+  const handleGenerateQuiz = (pdfId) => {
+    navigate(`/quizzes/ai-generate?pdfId=${pdfId}`);
   };
 
   const formatFileSize = (bytes) => {
@@ -287,8 +279,9 @@ const PdfManagerPage = () => {
                     </button>
                   )}
                   <button
-                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg ${isDark ? 'bg-slate-700/50 hover:bg-slate-700 text-slate-300' : 'bg-light-200 hover:bg-light-300 text-light-700'} text-sm transition-colors`}
-                    title="View details"
+                    onClick={() => setSelectedPdfForView(pdf)}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg ${isDark ? 'bg-slate-700/50 hover:bg-slate-700 text-slate-300' : 'bg-light-200 hover:bg-light-300 text-light-700'} text-sm transition-colors cursor-pointer`}
+                    title="View details & Preview"
                   >
                     <Eye size={16} />
                     <span>View</span>
@@ -318,6 +311,14 @@ const PdfManagerPage = () => {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onUploadSuccess={handleUploadSuccess}
+      />
+
+      {/* PDF View & RAG Chunks Modal */}
+      <PdfViewModal
+        pdf={selectedPdfForView}
+        isOpen={Boolean(selectedPdfForView)}
+        onClose={() => setSelectedPdfForView(null)}
+        onGenerateQuiz={handleGenerateQuiz}
       />
     </div>
   );

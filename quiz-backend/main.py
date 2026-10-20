@@ -1554,6 +1554,51 @@ def get_pdf_by_id(pdf_id: int, db: Session = Depends(get_db)):
     return pdf
 
 
+@app.get("/api/v1/pdfs/{pdf_id}/file")
+def get_pdf_file(
+    pdf_id: int,
+    download: bool = False,
+    db: Session = Depends(get_db)
+):
+    """
+    Serve raw PDF file for inline viewing in browser iframe/viewer or for downloading.
+    Handles relative paths, uploads directory mappings, and unicode filename headers.
+    """
+    from fastapi.responses import FileResponse
+    import urllib.parse
+
+    pdf = db.query(PDF).filter(PDF.id == pdf_id).first()
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF record not found in database")
+
+    resolved_path = None
+    candidate_paths = [
+        pdf.file_path,
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), pdf.file_path) if pdf.file_path else None,
+        os.path.join(UPLOADS_DIR, os.path.basename(pdf.file_path)) if pdf.file_path else None,
+        os.path.join(UPLOADS_DIR, pdf.name) if pdf.name else None,
+    ]
+    for p in candidate_paths:
+        if p and os.path.exists(p):
+            resolved_path = os.path.abspath(p)
+            break
+
+    if not resolved_path:
+        raise HTTPException(status_code=404, detail="PDF physical file not found on disk")
+
+    filename = pdf.original_name or pdf.name or "document.pdf"
+    disposition = "attachment" if download else "inline"
+    quoted_filename = urllib.parse.quote(filename)
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="{filename}"; filename*=UTF-8\'\'{quoted_filename}'
+    }
+    return FileResponse(
+        path=resolved_path,
+        media_type="application/pdf",
+        headers=headers
+    )
+
+
 @app.get("/api/v1/pdfs/{pdf_id}/chunks")
 def get_pdf_chunks(pdf_id: int, db: Session = Depends(get_db)):
     """

@@ -92,8 +92,19 @@ const AIQuizGenerationPage = () => {
       const response = await fetch('/api/v1/pdfs', {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
-      const data = await response.json();
-      setPdfs(Array.isArray(data) ? data : []);
+      const pdfList = Array.isArray(data) ? data : [];
+      setPdfs(pdfList);
+
+      // Auto-select PDF if pdfId is provided in URL query parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlPdfId = urlParams.get('pdfId');
+      if (urlPdfId && pdfList.length > 0) {
+        const found = pdfList.find(p => String(p.id) === String(urlPdfId));
+        if (found) {
+          setSelectedPDF(found);
+          setInputMode('pdf');
+        }
+      }
     } catch (error) {
       logErrorDetails(error, 'fetchPDFs');
       toast.error(extractErrorMessage(error) || 'Failed to load PDFs');
