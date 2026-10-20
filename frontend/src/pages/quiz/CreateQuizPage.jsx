@@ -83,6 +83,16 @@ const CreateQuizPage = () => {
         
         console.log('Extracted PDF Array:', normalizedPdfs);
         setPdfs(normalizedPdfs);
+
+        // Auto-select PDF if pdfId is provided in URL query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlPdfId = urlParams.get('pdfId');
+        if (urlPdfId && normalizedPdfs.length > 0) {
+          const found = normalizedPdfs.find(p => String(p.id) === String(urlPdfId) || String(p._id) === String(urlPdfId));
+          if (found) {
+            setSelectedPdf(found);
+          }
+        }
         setPdfError(null);
       } catch (error) {
         console.error('PDF fetch error:', error);

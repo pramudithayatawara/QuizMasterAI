@@ -145,7 +145,7 @@ const PDFDetailPage = () => {
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => navigate(`/quizzes/ai-generate?pdfId=${pdf.id}`)}
+            onClick={() => navigate(`/quizzes/ai-generate?pdfId=${pdf.id || pdf._id}`)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
           >
             <Sparkles size={16} />

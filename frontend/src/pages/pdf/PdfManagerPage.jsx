@@ -268,10 +268,10 @@ const PdfManagerPage = () => {
 
                 {/* Action Buttons */}
                 <div className={`flex gap-2 pt-4 border-t ${isDark ? 'border-white/10' : 'border-light-300'}`}>
-                  {(pdf.status === 'completed') && (
+                  {(pdf.status?.toLowerCase() === 'completed' || pdf.status?.toLowerCase() === 'ready' || !pdf.status) && (
                     <button
-                      onClick={() => handleGenerateQuiz(pdf.id)}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-sm transition-colors"
+                      onClick={() => handleGenerateQuiz(pdf.id || pdf._id)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-sm transition-colors cursor-pointer"
                       title="Generate Quiz"
                     >
                       <Brain size={16} />

@@ -86,10 +86,11 @@ const PdfViewModal = ({ pdf, isOpen, onClose, onGenerateQuiz }) => {
 
   const handleNavigateToGenerator = () => {
     onClose();
+    const targetId = pdf.id || pdf._id;
     if (onGenerateQuiz) {
-      onGenerateQuiz(pdf.id);
+      onGenerateQuiz(targetId);
     } else {
-      navigate(`/quizzes/ai-generate?pdfId=${pdf.id}`);
+      navigate(`/quizzes/ai-generate?pdfId=${targetId}`);
     }
   };
 

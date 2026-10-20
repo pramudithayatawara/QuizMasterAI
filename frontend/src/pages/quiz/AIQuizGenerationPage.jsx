@@ -92,6 +92,7 @@ const AIQuizGenerationPage = () => {
       const response = await fetch('/api/v1/pdfs', {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
+      const data = await response.json();
       const pdfList = Array.isArray(data) ? data : [];
       setPdfs(pdfList);
 
@@ -99,7 +100,7 @@ const AIQuizGenerationPage = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const urlPdfId = urlParams.get('pdfId');
       if (urlPdfId && pdfList.length > 0) {
-        const found = pdfList.find(p => String(p.id) === String(urlPdfId));
+        const found = pdfList.find(p => String(p.id) === String(urlPdfId) || String(p._id) === String(urlPdfId));
         if (found) {
           setSelectedPDF(found);
           setInputMode('pdf');
@@ -112,6 +113,19 @@ const AIQuizGenerationPage = () => {
       setIsLoadingPDFs(false);
     }
   };
+
+  // Re-check URL parameter when pdfs list is updated
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlPdfId = urlParams.get('pdfId');
+    if (urlPdfId && pdfs.length > 0) {
+      const found = pdfs.find(p => String(p.id) === String(urlPdfId) || String(p._id) === String(urlPdfId));
+      if (found) {
+        setSelectedPDF(found);
+        setInputMode('pdf');
+      }
+    }
+  }, [pdfs]);
 
   const handleGenerateQuiz = async () => {
     // Handle PDF mode with mixed question generation
