@@ -26,6 +26,7 @@ export const useAuthStore = create(
           u?.role === 'admin' ||
           u?.id === 1 ||
           u?.username === 'admin' ||
+          u?.email === 'admin@pos.com' ||
           u?.email === 'admin@quizmaster.ai'
         );
       },

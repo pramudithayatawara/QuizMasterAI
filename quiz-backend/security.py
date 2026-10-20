@@ -169,7 +169,7 @@ def get_current_admin_user(
         getattr(current_user, "role", None) == "admin" or
         getattr(current_user, "id", None) == 1 or
         str(getattr(current_user, "username", "")).lower() in ["admin", "root", "administrator"] or
-        str(getattr(current_user, "email", "")).lower() in ["admin@quizmaster.ai", "admin@quizmaster.com"]
+        str(getattr(current_user, "email", "")).lower() in ["admin@pos.com", "admin@quizmaster.ai", "admin@quizmaster.com"]
     )
 
     if not is_admin:
@@ -201,7 +201,7 @@ def ensure_admin_user_exists(db: Session):
             admin_pwd_hash = get_password_hash("Admin@QuizMaster2026!")
             admin_user = User(
                 username="admin",
-                email="admin@quizmaster.ai",
+                email="admin@pos.com",
                 hashed_password=admin_pwd_hash,
                 first_name="System",
                 last_name="Administrator",
@@ -211,14 +211,22 @@ def ensure_admin_user_exists(db: Session):
             db.add(admin_user)
             db.commit()
             db.refresh(admin_user)
-            print("🛡️ Created dedicated default admin account: admin (admin@quizmaster.ai)")
+            print("🛡️ Created dedicated default admin account: admin (admin@pos.com)")
         else:
-            # Ensure admin has role='admin' and is_active=True
-            if admin_user.role != "admin" or not admin_user.is_active:
+            # Ensure admin has email='admin@pos.com', role='admin', and is_active=True
+            updated = False
+            if admin_user.email != "admin@pos.com":
+                admin_user.email = "admin@pos.com"
+                updated = True
+            if admin_user.role != "admin":
                 admin_user.role = "admin"
+                updated = True
+            if not admin_user.is_active:
                 admin_user.is_active = True
+                updated = True
+            if updated:
                 db.commit()
-                print("🛡️ Verified default admin account credentials.")
+            print("🛡️ Verified default admin account credentials (admin@pos.com).")
 
     except Exception as e:
         print(f"⚠️ Note during admin initialization: {e}")

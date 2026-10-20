@@ -123,7 +123,7 @@ const Sidebar = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const isAdmin = user?.role === 'admin' || user?.id === 1 || user?.username === 'admin' || user?.email === 'admin@quizmaster.ai';
+  const isAdmin = user?.role === 'admin' || user?.id === 1 || user?.username === 'admin' || user?.email === 'admin@pos.com' || user?.email === 'admin@quizmaster.ai';
 
   const navItems = React.useMemo(() => {
     if (!isAdmin) return NAV_ITEMS;
