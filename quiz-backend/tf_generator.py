@@ -14,7 +14,7 @@ Features:
 
 import os
 import random
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from dataclasses import dataclass
 from enum import Enum
 import re
@@ -59,10 +59,22 @@ class TFGenerationRequest(BaseModel):
         le=20,
         description="Number of True/False questions to generate (1-20)"
     )
-    difficulty: Optional[DifficultyLevel] = Field(
+    difficulty: Optional[Union[DifficultyLevel, str]] = Field(
         default=DifficultyLevel.MEDIUM,
         description="Difficulty level for questions"
     )
+
+    @field_validator('difficulty', mode='before')
+    @classmethod
+    def parse_difficulty(cls, v):
+        if hasattr(v, 'value'):
+            v = v.value
+        if isinstance(v, str):
+            try:
+                return DifficultyLevel(v.lower())
+            except ValueError:
+                return DifficultyLevel.MEDIUM
+        return v or DifficultyLevel.MEDIUM
     topic: Optional[str] = Field(
         default=None,
         description="Topic for the questions (optional)"
@@ -468,7 +480,36 @@ class TrueFalseGenerator:
         # Determine how many questions per chunk
         chunks = request.content_chunks
         num_questions = request.num_questions
-        
+
+        # 1. Primary Strategy: Google Gemini Flash Generation
+        try:
+            from gemini_quiz_service import gemini_service
+            if gemini_service.is_available():
+                diff_str = str(request.difficulty.value if hasattr(request.difficulty, 'value') else request.difficulty).lower()
+                gemini_tfs = gemini_service.generate_tf_models(
+                    chunks=chunks,
+                    num_questions=num_questions,
+                    difficulty=diff_str,
+                    topic=request.topic
+                )
+                if gemini_tfs and len(gemini_tfs) >= num_questions:
+                    print(f"✨ TrueFalseGenerator: Successfully generated {len(gemini_tfs)} exam-quality questions via Gemini Flash")
+                    return TFGenerationResponse(
+                        success=True,
+                        questions=gemini_tfs[:num_questions],
+                        total_questions=min(len(gemini_tfs), num_questions),
+                        metadata={
+                            "engine": "gemini-flash-lite",
+                            "num_content_chunks": len(chunks),
+                            "difficulty": diff_str,
+                            "topic": request.topic,
+                            "language": request.language,
+                        }
+                    )
+        except Exception as e:
+            print(f"⚠️ Gemini TF generation fallback to local heuristic: {e}")
+
+        # 2. Secondary Strategy: Local heuristic / rule-based generation
         diff_str = str(request.difficulty.value if hasattr(request.difficulty, 'value') else request.difficulty).lower()
         is_random = diff_str in ["random", "mixed", "auto"]
         difficulty_pool = [DifficultyLevel.EASY, DifficultyLevel.MEDIUM, DifficultyLevel.HARD]

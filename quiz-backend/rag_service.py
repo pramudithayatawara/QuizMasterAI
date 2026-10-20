@@ -245,7 +245,27 @@ class RAGQuizService:
 
         generated_questions = []
 
-        # 2. Primary Strategy: Synthesize rich 4-option MCQs via MCQGenerator
+        # 2. Priority Strategy: High-Accuracy Google Gemini Flash Generation
+        try:
+            from gemini_quiz_service import gemini_service
+            if gemini_service.is_available():
+                diff_clean = str(difficulty).lower()
+                if diff_clean not in ["easy", "medium", "hard"]:
+                    diff_clean = "medium"
+                full_context = "\n\n".join(chunks)
+                gemini_questions = gemini_service.generate_quiz_from_context(
+                    context=full_context,
+                    num_questions=max(1, count),
+                    difficulty=diff_clean,
+                    question_type="mcq"
+                )
+                if gemini_questions and len(gemini_questions) > 0:
+                    print(f"✨ RAG: Successfully generated {len(gemini_questions)} exam-quality questions via Gemini Flash")
+                    return gemini_questions
+        except Exception as e:
+            print(f"⚠️ Gemini RAG generation failed, falling back to local: {e}")
+
+        # 3. Secondary Strategy: Synthesize rich 4-option MCQs via MCQGenerator
         try:
             from mcq_generator import get_mcq_generator, MCQGenerationRequest, DifficultyLevel
             mcq_gen = get_mcq_generator()
@@ -327,5 +347,4 @@ class RAGQuizService:
             except Exception as ex:
                 print(f"Error on chunk {idx}: {ex}")
 
-        return generated_questions
         return generated_questions

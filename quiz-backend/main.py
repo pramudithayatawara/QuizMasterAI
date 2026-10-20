@@ -1001,7 +1001,32 @@ def get_recommended_difficulty_v1(
 
 @app.post("/api/v1/quizzes/generate")
 def generate_quiz_v1(request: QuizRequest):
-    """Generate a quiz question from context using fine-tuned model - v1 API for frontend compatibility"""
+    """Generate a quiz question from context using Gemini Flash with fine-tuned model fallback"""
+    # 1. Primary Strategy: Gemini Flash
+    try:
+        from gemini_quiz_service import gemini_service
+        if gemini_service.is_available():
+            gemini_res = gemini_service.generate_quiz_from_context(
+                context=request.context,
+                num_questions=1,
+                difficulty="medium",
+                question_type="mcq"
+            )
+            if gemini_res and len(gemini_res) > 0:
+                q = gemini_res[0]
+                return {
+                    "question": q["question"],
+                    "options": q["options"],
+                    "correct_answer": q["correct_answer"],
+                    "explanation": q.get("explanation", ""),
+                    "difficulty": q.get("difficulty", "medium"),
+                    "context": request.context,
+                    "status": "success"
+                }
+    except Exception as e:
+        print(f"⚠️ Gemini v1 generate failed, falling back to local model: {e}")
+
+    # 2. Secondary Strategy: Local Fine-Tuned Model
     global tokenizer, model
 
     if tokenizer is None or model is None:

@@ -14,7 +14,7 @@ Features:
 
 import os
 import random
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 from dataclasses import dataclass
 from enum import Enum
 import re
@@ -59,10 +59,22 @@ class MCQGenerationRequest(BaseModel):
         le=20,
         description="Number of MCQs to generate (1-20)"
     )
-    difficulty: Optional[DifficultyLevel] = Field(
+    difficulty: Optional[Union[DifficultyLevel, str]] = Field(
         default=DifficultyLevel.MEDIUM,
         description="Difficulty level for questions"
     )
+
+    @field_validator('difficulty', mode='before')
+    @classmethod
+    def parse_difficulty(cls, v):
+        if hasattr(v, 'value'):
+            v = v.value
+        if isinstance(v, str):
+            try:
+                return DifficultyLevel(v.lower())
+            except ValueError:
+                return DifficultyLevel.MEDIUM
+        return v or DifficultyLevel.MEDIUM
     topic: Optional[str] = Field(
         default=None,
         description="Topic for the questions (optional)"
@@ -589,7 +601,36 @@ class MCQGenerator:
         questions = []
         chunks = request.content_chunks
         num_questions = request.num_questions
-        
+
+        # 1. Primary Strategy: Google Gemini Flash Generation
+        try:
+            from gemini_quiz_service import gemini_service
+            if gemini_service.is_available():
+                diff_str = str(request.difficulty.value if hasattr(request.difficulty, 'value') else request.difficulty).lower()
+                gemini_mcqs = gemini_service.generate_mcq_models(
+                    chunks=chunks,
+                    num_questions=num_questions,
+                    difficulty=diff_str,
+                    topic=request.topic
+                )
+                if gemini_mcqs and len(gemini_mcqs) >= num_questions:
+                    print(f"✨ MCQGenerator: Successfully generated {len(gemini_mcqs)} exam-quality questions via Gemini Flash")
+                    return MCQGenerationResponse(
+                        success=True,
+                        questions=gemini_mcqs[:num_questions],
+                        total_questions=min(len(gemini_mcqs), num_questions),
+                        metadata={
+                            "engine": "gemini-flash-lite",
+                            "num_content_chunks": len(chunks),
+                            "difficulty": diff_str,
+                            "topic": request.topic,
+                            "language": request.language,
+                        }
+                    )
+        except Exception as e:
+            print(f"⚠️ Gemini MCQ generation fallback to local heuristic: {e}")
+
+        # 2. Secondary Strategy: Local heuristic / rule-based question synthesis
         # Difficulty handling: if random / mixed, distribute across Easy, Medium, Hard
         diff_str = str(request.difficulty.value if hasattr(request.difficulty, 'value') else request.difficulty).lower()
         is_random = diff_str in ["random", "mixed", "auto"]
