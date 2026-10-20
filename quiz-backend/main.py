@@ -3239,22 +3239,39 @@ def delete_admin_pdf(
 DEFAULT_SETTINGS = {
     "gameplay": {
         "soundEffects": True,
+        "soundVolume": 80,
         "backgroundMusic": False,
         "timerVisibility": True,
+        "timerSound": True,
+        "autoAdvance": False,
+        "instantFeedback": True,
         "defaultDifficulty": "medium",
     },
     "appearance": {
         "theme": "dark",
+        "accentColor": "indigo",
+        "fontSize": "standard",
         "reducedMotion": False,
+        "confettiEffects": True,
+    },
+    "ai": {
+        "preferredEngine": "gemini",
+        "defaultQuestionCount": 10,
+        "questionType": "mcq",
+        "showSourceCitations": True,
+        "strictBloomTaxonomy": True,
     },
     "notifications": {
         "dailyReminders": True,
+        "reminderTime": "19:00",
         "battleInvites": True,
+        "achievementAlerts": True,
         "emailUpdates": False,
     },
     "privacy": {
         "publicProfile": True,
         "showOnLeaderboard": True,
+        "anonymousBattle": False,
     }
 }
 

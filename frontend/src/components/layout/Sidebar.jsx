@@ -156,7 +156,7 @@ const Sidebar = () => {
 
       {/* Sidebar */}
       <motion.aside
-        animate={{ width: isSidebarOpen ? 240 : 72 }}
+        animate={{ width: isSidebarOpen ? 256 : 72 }}
         transition={{ duration: 0.25, ease: 'easeInOut' }}
         className={cn(
           'fixed lg:relative z-30 h-full',
@@ -166,7 +166,7 @@ const Sidebar = () => {
           // Mobile: slide in/out
           !isSidebarOpen && 'lg:flex -translate-x-full lg:translate-x-0'
         )}
-        style={{ width: isSidebarOpen ? 240 : 72 }}
+        style={{ width: isSidebarOpen ? 256 : 72 }}
       >
         {/* Mobile close button */}
         <div className="lg:hidden flex justify-end p-3">

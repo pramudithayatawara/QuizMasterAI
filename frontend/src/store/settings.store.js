@@ -6,22 +6,39 @@ import toast from 'react-hot-toast';
 const DEFAULT_SETTINGS = {
   gameplay: {
     soundEffects: true,
+    soundVolume: 80,
     backgroundMusic: false,
     timerVisibility: true,
+    timerSound: true,
+    autoAdvance: false,
+    instantFeedback: true,
     defaultDifficulty: 'medium',
   },
   appearance: {
-    theme: 'dark',
+    theme: 'dark', // 'dark' | 'light' | 'midnight'
+    accentColor: 'indigo', // 'indigo' | 'emerald' | 'violet' | 'amber' | 'rose'
+    fontSize: 'standard', // 'compact' | 'standard' | 'large'
     reducedMotion: false,
+    confettiEffects: true,
+  },
+  ai: {
+    preferredEngine: 'gemini', // 'gemini' | 'local_t5'
+    defaultQuestionCount: 10,
+    questionType: 'mcq', // 'mcq' | 'tf' | 'mixed'
+    showSourceCitations: true,
+    strictBloomTaxonomy: true,
   },
   notifications: {
     dailyReminders: true,
+    reminderTime: '19:00',
     battleInvites: true,
+    achievementAlerts: true,
     emailUpdates: false,
   },
   privacy: {
     publicProfile: true,
     showOnLeaderboard: true,
+    anonymousBattle: false,
   },
 };
 
@@ -30,6 +47,7 @@ const mergeWithDefaults = (incoming) => {
   return {
     gameplay: { ...DEFAULT_SETTINGS.gameplay, ...(incoming.gameplay || {}) },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...(incoming.appearance || {}) },
+    ai: { ...DEFAULT_SETTINGS.ai, ...(incoming.ai || {}) },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(incoming.notifications || {}) },
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(incoming.privacy || {}) },
   };
