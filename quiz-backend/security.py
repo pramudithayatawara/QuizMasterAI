@@ -82,7 +82,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 from database import get_db
 
 
-def get_authenticated_user_id(authorization: Optional[str] = Header(None)) -> int:
+def get_authenticated_user_id(authorization: Optional[str] = Header(None), db: Optional[Any] = None) -> int:
     """
     Extract authenticated user_id from Authorization Bearer header.
     Validates cryptographic JWT tokens first, with transitional support for legacy token formats.
