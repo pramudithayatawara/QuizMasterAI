@@ -5,7 +5,7 @@ import {
   Brain, Bell, Menu, LogOut, User, Settings,
   Swords, ChevronDown, TrendingUp, Sparkles,
   CheckCheck, Trophy, Flame, Play, Clock,
-  ExternalLink, X
+  ExternalLink, X, QrCode
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store.js';
 import { useUIStore } from '../../store/ui.store.js';
@@ -15,6 +15,7 @@ import { notificationAPI } from '../../api/notification.api.js';
 import { gamificationAPI } from '../../api/gamification.api.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
 import Avatar from '../common/Avatar.jsx';
+import ShareQrModal from '../common/ShareQrModal.jsx';
 
 /**
  * @component Navbar
@@ -29,6 +30,7 @@ const Navbar = () => {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [currentLevel, setCurrentLevel] = useState(user?.level || 1);
@@ -210,6 +212,20 @@ const Navbar = () => {
           </span>
         </Link>
       )}
+
+      {/* Network QR Code Share Button */}
+      <button
+        onClick={() => setQrModalOpen(true)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer ${
+          isDark
+            ? 'bg-indigo-500/10 border-indigo-500/25 text-indigo-300 hover:bg-indigo-500/20 hover:text-white'
+            : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+        }`}
+        title="Scan QR Code to open on phone or share with peers"
+      >
+        <QrCode size={16} className="text-indigo-400" />
+        <span className="hidden lg:inline">Share QR</span>
+      </button>
 
       {/* Notifications Popover */}
       <div className="relative" ref={notifRef}>
@@ -451,6 +467,11 @@ const Navbar = () => {
           )}
         </AnimatePresence>
       </div>
+      {/* Dynamic Network QR Code Modal */}
+      <ShareQrModal
+        isOpen={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+      />
     </nav>
   );
 };
