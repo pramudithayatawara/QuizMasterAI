@@ -6,11 +6,13 @@ import { io } from 'socket.io-client';
  */
 
 const getSocketUrl = () => {
-  const currentHost = (typeof window !== 'undefined' && window.location.hostname) ? window.location.hostname : '127.0.0.1';
-  if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
-    return `http://${currentHost}:8000`;
+  if (import.meta.env.VITE_SOCKET_URL) {
+    return import.meta.env.VITE_SOCKET_URL;
   }
-  return import.meta.env.VITE_SOCKET_URL || `http://${currentHost}:8000`;
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin;
+  }
+  return 'http://127.0.0.1:8000';
 };
 const SOCKET_URL = getSocketUrl();
 
